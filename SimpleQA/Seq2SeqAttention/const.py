@@ -5,11 +5,12 @@ if sys.platform == "win32":
     trainDir = "D:/SimpleQA/data/atis/train"
     validDir = "D:/SimpleQA/data/atis/valid"
     testDir  = "D:/SimpleQA/data/atis/test"
+    modelDir = "D:/SimpleQA/model"
 else:
     trainDir = "/home/cks/program/SimpleQA/data/atis/train"
     validDir = "/home/cks/program/SimpleQA/data/atis/valid"
     testDir  = "/home/cks/program/SimpleQA/data/atis/test"
-
+    modelDir = "/home/cks/program/SimpleQA/model"
 
 """ 设定模型超参数 """
 TRAINITER     =   20         # 迭代训练次数#

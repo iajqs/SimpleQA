@@ -120,5 +120,5 @@ class Seq2Seq(nn.Module):
         intent          = self.seq2Intent(outputs)
         slots           = self.seq2Slots(outputs)
 
-        return intent, slots
+        return (intent, slots)
 

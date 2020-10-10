@@ -26,10 +26,10 @@ def getData(dataDir):
 
     '''seq.in'''
     with open(pathSeqIn, 'r', encoding='utf-8') as fr:
-        dataSeqIn = [normalizeString(line.strip()).split() for line in fr.readlines()]
+        dataSeqIn = [normalizeString(line.strip()).split(' ') for line in fr.readlines()]
     '''seq.out'''
     with open(pathSeqOut, 'r', encoding='utf-8') as fr:
-        dataSeqOut = [normalizeString(line.strip()).split() for line in fr.readlines()]
+        dataSeqOut = [normalizeString(line.strip()).split(' ') for line in fr.readlines()]
     '''label'''
     with open(pathLabel, 'r', encoding='utf-8') as fr:
         dataLabel = [line.strip() for line in fr.readlines()]
@@ -81,7 +81,7 @@ def getIntentDictionary(dataLabel):
     """
     setLabel = {label for label in dataLabel}
     label2index = {label: index + 1 for index, label in enumerate(setLabel)}
-    label2index[0] = "<UNK_LABEL>"
+    label2index["<UNK_LABEL>"] = 0
     index2label = {label2index[label]: label for label in label2index.keys()}
     dictLabel = (label2index, index2label)
     return dictLabel
@@ -95,8 +95,8 @@ def normalizeString(s):
     :param s:
     :return:
     """
-    s = re.sub(r"([.!?])", r" .", s)
-    s = re.sub(r"[^0-9a-zA-Z.!?]+", r" ", s)
+    s = re.sub(r"([.!?])", r".", s)
+    s = re.sub(r"[^0-9a-zA-Z.!?\-_\']+", r" ", s)
     return s
 
 def makePairs(dataSeqIn, dataSeqOut, dataLabel):
@@ -115,6 +115,7 @@ def makePairs(dataSeqIn, dataSeqOut, dataLabel):
         itemSeqOut = dataSeqOut[index]
         itemLabel  = dataLabel[index]
 
+        assert len(itemSeqIn) == len(itemSeqOut)
         pairs.append([itemSeqIn, itemSeqOut, itemLabel])
 
     return pairs
@@ -135,10 +136,11 @@ def transIds(pairs, word2index, slot2index, label2index):
         itemSeqOut = pair[1]
         itemLabel  = pair[2]
 
-        itemSeqInIded  = [word2index.get(word, 2) for word in itemSeqIn]    # words to ids
-        itemSeqOutIded = [slot2index[slot] for slot in itemSeqOut]          # slots to ids
+        itemSeqInIded  = [word2index.get(word, 1) for word in itemSeqIn]    # words to ids
+        itemSeqOutIded = [slot2index.get(slot, 0) for slot in itemSeqOut]   # slots to ids
         itemLabelIded  = label2index.get(itemLabel, 0)                      # labels to ids
 
+        assert len(itemSeqInIded) == len(itemSeqOutIded)
         pairsIded.append([itemSeqInIded, itemSeqOutIded, itemLabelIded])
 
     return pairsIded
@@ -173,7 +175,7 @@ def splitData(pairs):
     random.shuffle(pairs)
     trainIterator = []
     for start in range(0, len(pairs), BATCHSIZE):
-        trainIterator.append([[item[0] for item in pairs[start:start+BATCHSIZE]],
+        trainIterator.append([[item[0] for item in pairs[start:start + BATCHSIZE]],
                               [item[1] for item in pairs[start:start + BATCHSIZE]],
                               [item[2] for item in pairs[start:start + BATCHSIZE]]])
     return trainIterator

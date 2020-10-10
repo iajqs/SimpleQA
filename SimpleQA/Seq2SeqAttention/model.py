@@ -35,21 +35,32 @@ class DecoderIntent(nn.Module):
 class DecoderSlot(nn.Module):
     def __init__(self, hidden_size, slot_size):
         super(DecoderSlot, self).__init__()
+        self.V  = nn.Linear(hidden_size, hidden_size)
+        self.W  = nn.Linear(hidden_size, hidden_size)
         self.fn = nn.Linear(hidden_size, slot_size)
+
     def forward(self, hidden, attn_hidden, intent_d):
-        output = hidden + attn_hidden
-        slots = self.fn(output)
+        intent_d = intent_d.view(intent_d.size(0), 1, intent_d.size(1))
+        # g = sigma(v·tanh(C^S_i + W·C^I))
+        slot_gate = self.V(torch.tanh(attn_hidden + self.W(intent_d)))
+        # W^S_hy·(h_i + C^S_i·g)
+        slot_gate = attn_hidden * slot_gate # C^S_i·g
+        output = hidden + slot_gate         # h_i + ..
+        slots = self.fn(output)             # W^S_hy
         return slots
 
 class AttnIntent(nn.Module):
-    def __init__(self):
+    def __init__(self, hidden_size):
         super(AttnIntent, self).__init__()
+        self.weightI_he = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, hidden, outputs, mask=None):
-        hidden = hidden.squeeze(1).unsqueeze(2)
+        hidden        = self.weightI_he(hidden)
+        hidden        = torch.sigmoid(hidden)
+        hidden        = hidden.squeeze(1).unsqueeze(2)
 
-        batch_size = outputs.size(0)
-        max_len    = outputs.size(1)
+        batch_size    = outputs.size(0)
+        max_len       = outputs.size(1)
 
         energies      = outputs.contiguous().view(batch_size, max_len, -1)
         attn_energies = energies.bmm(hidden).transpose(1, 2)
@@ -64,7 +75,6 @@ class AttnSlot(nn.Module):
     def __init__(self, hidden_size):
         super(AttnSlot, self).__init__()
         self.weightS_he = nn.Linear(hidden_size, hidden_size)
-        pass
 
     def forward(self, hidden, outputs):
         hidden        = self.weightS_he(hidden)  # W^S_he * h_k
@@ -92,7 +102,7 @@ class Seq2Intent(nn.Module):
         intent_d = self.attn_intent(outputs[:, -1, :], outputs)
         intent   = self.decoder(outputs[:, -1, :], intent_d)
 
-        return intent
+        return intent, intent_d
 
 
 class Seq2Slots(nn.Module):
@@ -116,9 +126,9 @@ class Seq2Seq(nn.Module):
         self.seq2Slots   = seq2Slots
 
     def forward(self, seqIn):
-        outputs, hidden = self.encoder(seqIn)
-        intent          = self.seq2Intent(outputs)
-        slots           = self.seq2Slots(outputs)
+        outputs, hidden  = self.encoder(seqIn)
+        intent, intent_d = self.seq2Intent(outputs)
+        slots            = self.seq2Slots(outputs, intent_d)
 
         return (intent, slots)
 

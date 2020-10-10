@@ -30,7 +30,7 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE):
     """
     encoder       = EncoderRNN(input_size=WORDSIZE, emb_size=EMBEDDSIZE, hidden_size=LSTMHIDSIZE, n_layers=NLAYER, dropout=DROPOUT, bidirectional=BIDIRECTIONAL)
 
-    attnIntent    = AttnIntent()
+    attnIntent    = AttnIntent(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
     attnSlot      = AttnSlot(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
 
     decoderIntent = DecoderIntent(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, intent_size=INTENTSIZE)
@@ -56,14 +56,14 @@ def initLossFunction(PAD_IDX=-100):
 def train(iter, model=None):
 
     ''' 读取数据 '''
-    dataSeqIn, dataSeqOut, dataLabel = getData(trainDir)                 # 获取原数据
-    dictWord  = getWordDictionary(dataSeqIn)                             # 获取词典  (word2index, index2word)
-    dictSlot  = getSlotDictionary(dataSeqOut)                            # 获取词槽标签字典  (slot2index, index2slot)
-    dictLabel = getIntentDictionary(dataLabel)                           # 获取意图标签字典  (label2index, index2label)
-    pairs = makePairs(dataSeqIn, dataSeqOut, dataLabel)                  # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
-    pairsIded = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])  # 将字词都转换为数字id
-    pairsIdedPaded = pad(pairsIded)                                      # 对数据进行pad填充与长度裁剪
-    trainIterator = splitData(pairsIdedPaded)                            # 讲样例集按BATCHSIZE大小切分成多个块
+    dataSeqIn, dataSeqOut, dataLabel = getData(trainDir)                        # 获取原数据
+    dictWord        = getWordDictionary(dataSeqIn)                              # 获取词典  (word2index, index2word)
+    dictSlot        = getSlotDictionary(dataSeqOut)                             # 获取词槽标签字典  (slot2index, index2slot)
+    dictLabel       = getIntentDictionary(dataLabel)                            # 获取意图标签字典  (label2index, index2label)
+    pairs           = makePairs(dataSeqIn, dataSeqOut, dataLabel)               # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
+    pairsIded       = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])   # 将字词都转换为数字id
+    pairsIdedPaded  = pad(pairsIded)                                            # 对数据进行pad填充与长度裁剪
+    trainIterator   = splitData(pairsIdedPaded)                                 # 讲样例集按BATCHSIZE大小切分成多个块
 
 
     ''' 设定字典大小参数 '''
@@ -95,11 +95,11 @@ def train(iter, model=None):
         outputLabel  = outputs[0]
         outputSlots  = outputs[1]
 
-        BatchseqOut = BatchseqOut.view(BatchseqOut.size(0) * BatchseqOut.size(1))
-        outputSlots = outputSlots.view(outputSlots.size(0) * outputSlots.size(1), SLOTSIZE)
+        BatchseqOut  = BatchseqOut.view(BatchseqOut.size(0) * BatchseqOut.size(1))
+        outputSlots  = outputSlots.view(outputSlots.size(0) * outputSlots.size(1), SLOTSIZE)
 
-        lossLabel = criterionLabel(outputLabel, Batchlabel)
-        lossSlot  = criterionSlot(outputSlots, BatchseqOut)
+        lossLabel    = criterionLabel(outputLabel, Batchlabel)
+        lossSlot     = criterionSlot(outputSlots, BatchseqOut)
 
         loss = lossLabel + lossSlot
         loss.backward()

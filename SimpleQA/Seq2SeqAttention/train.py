@@ -62,8 +62,8 @@ def train(iter, model=None):
     dictLabel       = getIntentDictionary(dataLabel)                            # 获取意图标签字典  (label2index, index2label)
     pairs           = makePairs(dataSeqIn, dataSeqOut, dataLabel)               # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
     pairsIded       = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])   # 将字词都转换为数字id
-    pairsIdedPaded  = pad(pairsIded)                                            # 对数据进行pad填充与长度裁剪
-    trainIterator   = splitData(pairsIdedPaded)                                 # 讲样例集按BATCHSIZE大小切分成多个块
+    # pairsIdedPaded  = pad(pairsIded)                                          # 对数据进行pad填充与长度裁剪
+    trainIterator   = splitData(pairsIded)                                      # 讲样例集按BATCHSIZE大小切分成多个块
 
 
     ''' 设定字典大小参数 '''
@@ -84,6 +84,7 @@ def train(iter, model=None):
     epoch_lossSlot  = 0
 
     for epoch, batch in enumerate(trainIterator):
+        batch       = padBatch(batch)   # 按照一个batch一个batch的进行pad
         BatchSeqIn  = batch[0]          # 文本序列
         BatchseqOut = batch[1]          # 词槽标签序列
         Batchlabel  = batch[2]          # 意图标签
@@ -110,6 +111,9 @@ def train(iter, model=None):
         epoch_lossLabel += lossLabel.item()
         epoch_lossSlot  += lossSlot.item()
         print("iter=%d, epoch=%d / %d: trainLoss = %f、 labelLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), loss.item(), lossLabel, lossSlot))
+
+        import time
+        time.sleep(1)
     return (epoch_lossLabel / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, (dictWord, dictSlot, dictLabel)
 
 def evaluate(model, dicts):
@@ -121,8 +125,8 @@ def evaluate(model, dicts):
     dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
     pairs     = makePairs(dataSeqIn, dataSeqOut, dataLabel)                  # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
     pairsIded = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])      # 将字词都转换为数字id
-    pairsIdedPaded = pad(pairsIded)                                          # 对数据进行pad填充与长度裁剪
-    validIterator  = splitData(pairsIdedPaded)                               # 讲样例集按BATCHSIZE大小切分成多个块
+    # pairsIdedPaded = pad(pairsIded)                                          # 对数据进行pad填充与长度裁剪
+    validIterator  = splitData(pairsIded)                               # 讲样例集按BATCHSIZE大小切分成多个块
 
     ''' 设定字典大小参数 '''
     WORDSIZE   = len(dictWord[0])
@@ -138,6 +142,7 @@ def evaluate(model, dicts):
 
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
+            batch       = padBatch(batch)  # 按照一个batch一个batch的进行pad
             BatchSeqIn  = batch[0]
             BatchseqOut = batch[1]
             Batchlabel  = batch[2]

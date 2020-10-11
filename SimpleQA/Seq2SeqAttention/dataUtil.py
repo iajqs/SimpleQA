@@ -153,6 +153,7 @@ def pad(pairsIded):
     :return:
     """
     pairsIdedPaded = []
+
     for pair in pairsIded:
         itemSeqIn  = pair[0]
         itemSeqOut = pair[1]
@@ -179,6 +180,23 @@ def splitData(pairs):
                               [item[1] for item in pairs[start:start + BATCHSIZE]],
                               [item[2] for item in pairs[start:start + BATCHSIZE]]])
     return trainIterator
+
+def padBatch(pairsIded):
+    """
+    根据序列最大长度对数据进行裁剪和pading操作
+    :param pairsIded: 样例对
+    :return:
+    """
+
+    MAXLEN_TEMP = max(MAXLEN, max([len(pair) for pair in pairsIded[0]]))
+
+    itemSeqIn   = [(pairsIded[0][index] + [PAD_IDX] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[0]))]
+    itemSeqOut  = [(pairsIded[1][index] + [PAD_IDX] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[1]))]
+    trainIterator = [itemSeqIn, itemSeqOut, pairsIded[2]]
+
+    return trainIterator
+
+
 
 def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel):
     BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")

@@ -2,15 +2,16 @@ import torch
 import torch.nn as nn
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, emb_size, hidden_size, n_layers, dropout, bidirectional=True):
+    def __init__(self, input_size, emb_size, pading_idx, hidden_size, n_layers, dropout, bidirectional=True):
         super(EncoderRNN, self).__init__()
         self.input_size  = input_size
         self.emb_size    = emb_size
+        self.pading_idx  = pading_idx
         self.hidden_size = hidden_size
         self.n_layers    = n_layers
         self.dropout     = dropout
 
-        self.embedding   = nn.Embedding(input_size, emb_size)
+        self.embedding   = nn.Embedding(input_size, emb_size, padding_idx=pading_idx)
         self.lstm        = nn.LSTM(input_size=emb_size,  hidden_size=hidden_size, bidirectional=bidirectional)
         self.dropout     = nn.Dropout(dropout)
 
@@ -98,9 +99,9 @@ class Seq2Intent(nn.Module):
         self.decoder     = dec_intent
         self.attn_intent = attn_intent
 
-    def forward(self, outputs):
-        intent_d = self.attn_intent(outputs[:, -1, :], outputs)
-        intent   = self.decoder(outputs[:, -1, :], intent_d)
+    def forward(self, inputIntent, outputs):
+        intent_d = self.attn_intent(inputIntent, outputs)
+        intent   = self.decoder(inputIntent, intent_d)
 
         return intent, intent_d
 
@@ -125,9 +126,21 @@ class Seq2Seq(nn.Module):
         self.seq2Intent  = seq2Intent
         self.seq2Slots   = seq2Slots
 
-    def forward(self, seqIn):
+    def getUsefulOutputForIntent(self, outputs, lLensSeqin):
+        inputIntent = []
+        for i, o in enumerate(outputs):
+            inputIntent.append(o[lLensSeqin[i] - 1])
+        return torch.cat(inputIntent).view(outputs.size(0), -1)
+
+    def forward(self, seqIn, lLensSeqin=None):
         outputs, hidden  = self.encoder(seqIn)
-        intent, intent_d = self.seq2Intent(outputs)
+
+        inputIntent = outputs[:, -1, :]
+
+        if lLensSeqin != None:
+            inputIntent = self.getUsefulOutputForIntent(outputs, lLensSeqin)
+
+        intent, intent_d = self.seq2Intent(inputIntent, outputs)
         slots            = self.seq2Slots(outputs, intent_d)
 
         return (intent, slots)

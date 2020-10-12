@@ -18,7 +18,7 @@ def getData(dataDir):
     """
     pathSeqIn  = dataDir + "/seq.in"          # 输入序列文件路径
     pathSeqOut = dataDir + "/seq.out"         # 输出序列文件路径
-    pathLabel = dataDir + "/label"           # 输出意图文件路径
+    pathLabel  = dataDir + "/label"           # 输出意图文件路径
 
     dataSeqIn  = []      # 输入序列数据
     dataSeqOut = []      # 输出序列数据
@@ -33,8 +33,6 @@ def getData(dataDir):
     '''label'''
     with open(pathLabel, 'r', encoding='utf-8') as fr:
         dataLabel = [line.strip() for line in fr.readlines()]
-
-    assert len(dataSeqIn) == len(dataSeqOut) == len(dataLabel)
 
     return dataSeqIn, dataSeqOut, dataLabel
 
@@ -71,7 +69,6 @@ def getSlotDictionary(dataSeqOut):
     slot2index = {slot: index + COUNTSSIGN for index, slot in enumerate(setSlot)}
     slot2index["<UNK_SLOT>"] = SUNK_SIGN
     slot2index["<PAD_SLOT>"] = SPAD_SIGN
-    slot2index[SPAD]          = SONLY_SIGN
     index2slot = {slot2index[slot]: slot for slot in slot2index.keys()}
     dictSlot   = (slot2index, index2slot)
     return dictSlot
@@ -184,21 +181,31 @@ def splitData(pairs):
                               [item[2] for item in pairs[start:start + BATCHSIZE]]])
     return trainIterator
 
-def padBatch(pairsIded):
+def getMaxLengthFromBatch(batch, addLength):
+    """
+    :param batch: 样例对集合
+    :return: Batch中最长的输入序列的长度
+    """
+    return max([len(seqIn) for seqIn in batch[0]]) + addLength
+
+def getSeqInLengthsFromBatch(batch, addLength):
+    """
+    :param batch: 样例对集合
+    :return: []: 所有输入序列的长度
+    """
+    return [len(seqIn) + addLength for seqIn in batch[0]]
+
+def padBatch(batch, MAXLEN_TEMP=MAXLEN):
     """
     根据序列最大长度对数据进行裁剪和pading操作
     :param pairsIded: 样例对
     :return:
     """
+    batchSeqIn     = [(batch[0][index] + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[0]))]
+    batchSeqOut    = [(batch[1][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[1]))]
+    trainIterator = [batchSeqIn, batchSeqOut, batch[2]]
 
-    MAXLEN_TEMP = max([len(pair) for pair in pairsIded[0]]) + 1
-
-    itemSeqIn     = [(pairsIded[0][index] + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[0]))]
-    itemSeqOut    = [(pairsIded[1][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[1]))]
-    trainIterator = [itemSeqIn, itemSeqOut, pairsIded[2]]
-
-    # print(itemSeqIn[0])
-    return trainIterator, MAXLEN_TEMP
+    return trainIterator
 
 def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel):
     BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")

@@ -15,7 +15,7 @@ import torch
 
 def evaluateLoss(model, dicts):
     ''' 读取数据 '''
-    dataSeqIn, dataSeqOut, dataLabel = getData(validDir)    # 获取原数据
+    dataSeqIn, dataSeqOut, dataLabel = getData(testDir)    # 获取原数据
     dictWord  = dicts[0]                                    # 获取词典  (word2index, index2word)
     dictSlot  = dicts[1]                                    # 获取词槽标签字典  (slot2index, index2slot)
     dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
@@ -27,8 +27,8 @@ def evaluateLoss(model, dicts):
     SLOTSIZE   = len(dictSlot[0])
     INTENTSIZE = len(dictLabel[0])
 
-    criterionLabel = initLossFunction(PAD_IDX)           # 初始化并返回损失函数 -- 意图
-    criterionSlot  = initLossFunction()                  # 初始化并返回损失函数 -- 词槽
+    criterionLabel = initLossFunction()           # 初始化并返回损失函数 -- 意图
+    criterionSlot  = initLossFunction(SPAD_SIGN)  # 初始化并返回损失函数 -- 词槽
     ''' 模型验证 '''
     model.eval()
     epoch_lossLabel = 0
@@ -36,9 +36,10 @@ def evaluateLoss(model, dicts):
 
     with torch.no_grad():
         for i, batch in enumerate(pairsIded):
-            BatchSeqIn  = [batch[0]]
-            BatchseqOut = [batch[1]]
-            Batchlabel  = [batch[2]]
+            batch, L    = padBatch([[batch[0]], [batch[1]], [batch[2]]])
+            BatchSeqIn  = batch[0]
+            BatchseqOut = batch[1]
+            Batchlabel  = batch[2]
             BatchSeqIn, BatchseqOut, Batchlabel = vector2Tensor(BatchSeqIn, BatchseqOut, Batchlabel)
 
             outputs     = model(BatchSeqIn)
@@ -58,7 +59,7 @@ def evaluateLoss(model, dicts):
 def evaluateAccuracy(model, dicts):
 
     ''' 读取数据 '''
-    dataSeqIn, dataSeqOut, dataLabel = getData(validDir)    # 获取原数据
+    dataSeqIn, dataSeqOut, dataLabel = getData(testDir)    # 获取原数据
     dictWord  = dicts[0]                                    # 获取词典  (word2index, index2word)
     dictSlot  = dicts[1]                                    # 获取词槽标签字典  (slot2index, index2slot)
     dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
@@ -78,9 +79,11 @@ def evaluateAccuracy(model, dicts):
 
     with torch.no_grad():
         for i, batch in enumerate(pairsIded):
-            BatchSeqIn  = [batch[0]]
-            BatchseqOut = [batch[1]]
-            Batchlabel  = [batch[2]]
+            lengthSeq   = len(batch[0])     # 输入序列原始长度 -- 预测词槽标签时， 也只需要预测此长度的标签即可
+            batch, _    = padBatch([[batch[0]], [batch[1]], [batch[2]]])
+            BatchSeqIn  = batch[0]
+            BatchseqOut = batch[1]
+            Batchlabel  = batch[2]
             BatchSeqIn, BatchseqOut, Batchlabel = vector2Tensor(BatchSeqIn, BatchseqOut, Batchlabel)
 
             outputs     = model(BatchSeqIn)
@@ -93,12 +96,12 @@ def evaluateAccuracy(model, dicts):
 
             # print(predictSlot)
             ''' 意图正确率计算 '''
-            if batch[2] == predictLabel.data.tolist()[0]:
+            if batch[2][0] == predictLabel.data.tolist()[0]:
                 countLabelAcc += 1
             ''' 词槽正确率计算 '''
-            for i in range(len(batch[1])):
-                if batch[1][i] == predictSlot.data.tolist()[i]:
-                    countSlotAcc += 1 / len(batch[1])
+            for i in range(lengthSeq):
+                if batch[1][0][i] == predictSlot.data.tolist()[i]:
+                    countSlotAcc += 1 / lengthSeq
 
     return (countLabelAcc / len(pairsIded), countSlotAcc / len(pairsIded))
 

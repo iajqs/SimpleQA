@@ -18,7 +18,7 @@ def getData(dataDir):
     """
     pathSeqIn  = dataDir + "/seq.in"          # 输入序列文件路径
     pathSeqOut = dataDir + "/seq.out"         # 输出序列文件路径
-    pathLabel  = dataDir + "/label"           # 输出意图文件路径
+    pathLabel = dataDir + "/label"           # 输出意图文件路径
 
     dataSeqIn  = []      # 输入序列数据
     dataSeqOut = []      # 输出序列数据
@@ -49,11 +49,12 @@ def getWordDictionary(dataSeqin):
     for line in dataSeqin:
         for word in line:
             setWord.add(word)
-    word2index = {word: index + 2 for index, word in enumerate(setWord)}
-    word2index["<PAD>"] = 0
-    word2index["<UNK>"] = 1
+    word2index = {word: index + COUNTWSIGN for index, word in enumerate(setWord)}
+    word2index["<UNK_WORD>"] = WUNK_SIGN
+    word2index["<PAD_WORD>"] = WPAD_SIGN
+    word2index["<EOS_WORD>"] = WEOS_SIGN
     index2word = {word2index[word]: word for word in word2index.keys()}
-    dictWord = (word2index, index2word)
+    dictWord   = (word2index, index2word)
     return dictWord
 
 """ 获取标签字典 """
@@ -67,10 +68,12 @@ def getSlotDictionary(dataSeqOut):
     for line in dataSeqOut:
         for slot in line:
             setSlot.add(slot)
-    slot2index = {slot: index + 1 for index, slot in enumerate(setSlot)}
-    slot2index["<PAD>"] = 0
+    slot2index = {slot: index + COUNTSSIGN for index, slot in enumerate(setSlot)}
+    slot2index["<UNK_SLOT>"] = SUNK_SIGN
+    slot2index["<PAD_SLOT>"] = SPAD_SIGN
+    slot2index[SPAD]          = SONLY_SIGN
     index2slot = {slot2index[slot]: slot for slot in slot2index.keys()}
-    dictSlot = (slot2index, index2slot)
+    dictSlot   = (slot2index, index2slot)
     return dictSlot
 
 def getIntentDictionary(dataLabel):
@@ -79,12 +82,12 @@ def getIntentDictionary(dataLabel):
     :param dataLabel:
     :return:
     """
-    setLabel = {label for label in dataLabel}
-    label2index = {label: index + 1 for index, label in enumerate(setLabel)}
-    label2index["<UNK_LABEL>"] = 0
-    index2label = {label2index[label]: label for label in label2index.keys()}
-    dictLabel = (label2index, index2label)
-    return dictLabel
+    setIntent    = {intent for intent in dataLabel}
+    intent2index = {intent: index + COUNTISIGN for index, intent in enumerate(setIntent)}
+    intent2index["<UNK_INTENT>"] = IUNK_SIGN
+    index2intent = {intent2index[intent]: intent for intent in intent2index.keys()}
+    dictIntent   = (intent2index, index2intent)
+    return dictIntent
 
 
 
@@ -121,27 +124,27 @@ def makePairs(dataSeqIn, dataSeqOut, dataLabel):
     return pairs
 
 
-def transIds(pairs, word2index, slot2index, label2index):
+def transIds(pairs, word2index, slot2index, intent2index):
     """
     将字词数据都转换为整数id
     :param pairs:
     :param dictWord:
     :param dictSlot:
-    :param dictLabel:
+    :param dictIntent:
     :return:
     """
     pairsIded = []
     for pair in pairs:
         itemSeqIn  = pair[0]
         itemSeqOut = pair[1]
-        itemLabel  = pair[2]
+        itemIntent = pair[2]
 
-        itemSeqInIded  = [word2index.get(word, 1) for word in itemSeqIn]    # words to ids
-        itemSeqOutIded = [slot2index.get(slot, 0) for slot in itemSeqOut]   # slots to ids
-        itemLabelIded  = label2index.get(itemLabel, 0)                      # labels to ids
+        itemSeqInIded  = [word2index.get(word, WUNK_SIGN) for word in itemSeqIn]    # words to ids
+        itemSeqOutIded = [slot2index.get(slot, SUNK_SIGN) for slot in itemSeqOut]   # slots to ids
+        itemIntentIded  = intent2index.get(itemIntent, 0)                      # labels to ids
 
         assert len(itemSeqInIded) == len(itemSeqOutIded)
-        pairsIded.append([itemSeqInIded, itemSeqOutIded, itemLabelIded])
+        pairsIded.append([itemSeqInIded, itemSeqOutIded, itemIntentIded])
 
     return pairsIded
 
@@ -157,12 +160,12 @@ def pad(pairsIded):
     for pair in pairsIded:
         itemSeqIn  = pair[0]
         itemSeqOut = pair[1]
-        itemLabel  = pair[2]
+        itemIntent = pair[2]
 
-        itemSeqIn  = (itemSeqIn + [PAD_IDX] * MAXLEN)[:MAXLEN]
-        itemSeqOut = (itemSeqOut + [PAD_IDX] * MAXLEN)[:MAXLEN]
+        itemSeqIn  = (itemSeqIn + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN)[:MAXLEN] if len(itemSeqIn) < MAXLEN else itemSeqIn[:MAXLEN - 1] + [WEOS_SIGN]
+        itemSeqOut = (itemSeqOut + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN)[:MAXLEN] if len(itemSeqIn) < MAXLEN else itemSeqOut[:MAXLEN - 1] + [SPAD_SIGN]
 
-        pairsIdedPaded.append([itemSeqIn, itemSeqOut, itemLabel])
+        pairsIdedPaded.append([itemSeqIn, itemSeqOut, itemIntent])
 
     return pairsIdedPaded
 
@@ -188,15 +191,14 @@ def padBatch(pairsIded):
     :return:
     """
 
-    MAXLEN_TEMP = max(MAXLEN, max([len(pair) for pair in pairsIded[0]]))
+    MAXLEN_TEMP = max([len(pair) for pair in pairsIded[0]]) + 1
 
-    itemSeqIn   = [(pairsIded[0][index] + [PAD_IDX] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[0]))]
-    itemSeqOut  = [(pairsIded[1][index] + [PAD_IDX] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[1]))]
+    itemSeqIn     = [(pairsIded[0][index] + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[0]))]
+    itemSeqOut    = [(pairsIded[1][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(pairsIded[1]))]
     trainIterator = [itemSeqIn, itemSeqOut, pairsIded[2]]
 
-    return trainIterator
-
-
+    # print(itemSeqIn[0])
+    return trainIterator, MAXLEN_TEMP
 
 def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel):
     BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")

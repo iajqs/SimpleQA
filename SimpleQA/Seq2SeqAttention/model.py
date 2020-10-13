@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, emb_size, pading_idx, hidden_size, n_layers, dropout, bidirectional=True):
@@ -65,7 +66,8 @@ class AttnIntent(nn.Module):
 
         energies      = outputs.contiguous().view(batch_size, max_len, -1)
         attn_energies = energies.bmm(hidden).transpose(1, 2)
-        attn_energies = attn_energies.squeeze(1)
+        attn_energies = attn_energies.squeeze(1).masked_fill(mask, -1e12)
+
         alpha         = torch.softmax(attn_energies, dim=-1)
         alpha         = alpha.unsqueeze(1)
         context       = alpha.bmm(outputs)
@@ -77,7 +79,7 @@ class AttnSlot(nn.Module):
         super(AttnSlot, self).__init__()
         self.weightS_he = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, hidden, outputs):
+    def forward(self, hidden, outputs, mask):
         hidden        = self.weightS_he(hidden)  # W^S_he * h_k
         hidden        = torch.sigmoid(hidden)  # sigmoid(W^S_he * h_k)
         hidden        = hidden.transpose(1, 2)
@@ -87,6 +89,8 @@ class AttnSlot(nn.Module):
 
         energies      = outputs.contiguous().view(batch_size, max_len, -1)
         attn_energies = energies.bmm(hidden).transpose(1, 2)
+        attn_energies = attn_energies.masked_fill(mask, -1e12)
+
         alpha         = torch.softmax(attn_energies, dim=-1)
         context       = alpha.bmm(outputs)
         return context
@@ -99,8 +103,8 @@ class Seq2Intent(nn.Module):
         self.decoder     = dec_intent
         self.attn_intent = attn_intent
 
-    def forward(self, inputIntent, outputs):
-        intent_d = self.attn_intent(inputIntent, outputs)
+    def forward(self, inputIntent, outputs, mask):
+        intent_d = self.attn_intent(inputIntent, outputs, mask)
         intent   = self.decoder(inputIntent, intent_d)
 
         return intent, intent_d
@@ -113,8 +117,8 @@ class Seq2Slots(nn.Module):
         self.attn_slot = attn_slot
         self.decoder   = dec_slot
 
-    def forward(self, outputs, intent_d=None):
-        slot_d      = self.attn_slot(outputs, outputs)
+    def forward(self, outputs, intent_d, mask):
+        slot_d      = self.attn_slot(outputs, outputs, mask)
         slot        = self.decoder(slot_d, outputs, intent_d)
 
         return slot
@@ -136,12 +140,20 @@ class Seq2Seq(nn.Module):
         outputs, hidden  = self.encoder(seqIn)
 
         inputIntent = outputs[:, -1, :]
+        inputSlot   = outputs
+        mask        = torch.cat([Variable(torch.BoolTensor([1] * seqIn.size(1))) for lensSeqin in lLensSeqin]).view(seqIn.size(0), -1)
 
         if lLensSeqin != None:
+            mask        = [Variable(torch.BoolTensor([1] * lensSeqin + [0] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
+            mask        = torch.cat(mask).view(seqIn.size(0), -1)
+
             inputIntent = self.getUsefulOutputForIntent(outputs, lLensSeqin)
 
-        intent, intent_d = self.seq2Intent(inputIntent, outputs)
-        slots            = self.seq2Slots(outputs, intent_d)
+        maskIntent  = mask
+        maskSlot    = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
+
+        intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
+        slots            = self.seq2Slots(outputs, intent_d, maskSlot)
 
         return (intent, slots)
 

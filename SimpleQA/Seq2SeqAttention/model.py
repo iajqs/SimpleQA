@@ -29,7 +29,6 @@ class DecoderIntent(nn.Module):
 
     def forward(self, hidden, attn_hidden):
         output = hidden + attn_hidden
-        # print(intent_output.shape)
         intent = self.fn(output)
         return intent
 
@@ -52,14 +51,11 @@ class DecoderSlot(nn.Module):
         return slots
 
 class AttnIntent(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self):
         super(AttnIntent, self).__init__()
-        self.weightI_he = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, hidden, outputs, mask=None):
-        hidden        = self.weightI_he(hidden)
-        hidden        = torch.sigmoid(hidden)
-        hidden        = hidden.squeeze(1).unsqueeze(2)
+        hidden = hidden.squeeze(1).unsqueeze(2)
 
         batch_size    = outputs.size(0)
         max_len       = outputs.size(1)
@@ -75,13 +71,13 @@ class AttnIntent(nn.Module):
         return context
 
 class AttnSlot(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self):
         super(AttnSlot, self).__init__()
-        self.weightS_he = nn.Linear(hidden_size, hidden_size)
+        # self.weightS_he  = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, hidden, outputs, mask):
-        hidden        = self.weightS_he(hidden)  # W^S_he * h_k
-        hidden        = torch.sigmoid(hidden)  # sigmoid(W^S_he * h_k)
+        # hidden        = self.weightS_he(hidden)  # W^S_he * h_k
+        # hidden        = torch.sigmoid(hidden)  # sigmoid(W^S_he * h_k)
         hidden        = hidden.transpose(1, 2)
 
         batch_size    = outputs.size(0)
@@ -97,26 +93,46 @@ class AttnSlot(nn.Module):
 
 
 class Seq2Intent(nn.Module):
-    def __init__(self, dec_intent, attn_intent):
+    def __init__(self, dec_intent, attn_intent, hidden_size):
         super(Seq2Intent, self).__init__()
-
         self.decoder     = dec_intent
         self.attn_intent = attn_intent
+        self.weightI_in  = nn.Linear(hidden_size, hidden_size)
+        self.weightI_out = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, inputIntent, outputs, mask):
-        intent_d = self.attn_intent(inputIntent, outputs, mask)
-        intent   = self.decoder(inputIntent, intent_d)
+        inputIntent = self.weightI_in(inputIntent)
+        inputIntent = torch.sigmoid(inputIntent)
+
+        outputs     = self.weightI_out(outputs)
+        outputs     = torch.sigmoid(outputs)
+
+        intent_d    = self.attn_intent(inputIntent, outputs, mask)
+        intent      = self.decoder(inputIntent, intent_d)
 
         return intent, intent_d
 
 
 class Seq2Slots(nn.Module):
-    def __init__(self, attn_slot, dec_slot):
+    def __init__(self, attn_slot, dec_slot, hidden_size):
         super(Seq2Slots, self).__init__()
-        self.attn_slot = attn_slot
-        self.decoder   = dec_slot
+        self.attn_slot   = attn_slot
+        self.decoder     = dec_slot
+        self.weight      = nn.Linear(hidden_size, hidden_size)
+        self.weightS_in  = nn.Linear(hidden_size, hidden_size)
+        self.weightS_out = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, inputSlot, outputs, intent_d, mask):
+        intent_d    = Variable(intent_d, requires_grad=False)       # 设置slot的反向传播不影响intent的注意力层结果，
+                                                                    # 认为只是拿来使用的，不需要因为slot训练结果的优劣而去修正他，减少耦合性。
+        intent_d    = torch.softmax(self.weight(intent_d), dim=-1)
+
+        inputSlot        = self.weightS_in(inputSlot)  # W^S_he * h_k
+        inputSlot        = torch.sigmoid(inputSlot)    # sigmoid(W^S_he * h_k)
+
+        outputs       = self.weightS_out(outputs)
+        outputs       = torch.sigmoid(outputs)
+
         slot_d      = self.attn_slot(inputSlot, outputs, mask)
         slot        = self.decoder(outputs, slot_d, intent_d)
         return slot

@@ -41,12 +41,12 @@ class DecoderSlot(nn.Module):
         self.W  = nn.Linear(hidden_size, hidden_size)
         self.fn = nn.Linear(hidden_size, slot_size)
 
-    def forward(self, hidden, attn_hidden, intent_d):
+    def forward(self, hidden, slot_d, intent_d):
         intent_d = intent_d.view(intent_d.size(0), 1, intent_d.size(1))
         # g = sigma(v·tanh(C^S_i + W·C^I))
-        slot_gate = self.V(torch.tanh(attn_hidden + self.W(intent_d)))
+        slot_gate = self.V(torch.tanh(slot_d + self.W(intent_d)))
         # W^S_hy·(h_i + C^S_i·g)
-        slot_gate = attn_hidden * slot_gate # C^S_i·g
+        slot_gate = slot_d * slot_gate      # C^S_i·g
         output = hidden + slot_gate         # h_i + ..
         slots = self.fn(output)             # W^S_hy
         return slots
@@ -113,14 +113,12 @@ class Seq2Intent(nn.Module):
 class Seq2Slots(nn.Module):
     def __init__(self, attn_slot, dec_slot):
         super(Seq2Slots, self).__init__()
-
         self.attn_slot = attn_slot
         self.decoder   = dec_slot
 
-    def forward(self, outputs, intent_d, mask):
-        slot_d      = self.attn_slot(outputs, outputs, mask)
-        slot        = self.decoder(slot_d, outputs, intent_d)
-
+    def forward(self, inputSlot, outputs, intent_d, mask):
+        slot_d      = self.attn_slot(inputSlot, outputs, mask)
+        slot        = self.decoder(outputs, slot_d, intent_d)
         return slot
 
 class Seq2Seq(nn.Module):
@@ -139,21 +137,19 @@ class Seq2Seq(nn.Module):
     def forward(self, seqIn, lLensSeqin=None):
         outputs, hidden  = self.encoder(seqIn)
 
+        ''' 获取实际模型的输出与计算对应的长度mask矩阵 '''
         inputIntent = outputs[:, -1, :]
         inputSlot   = outputs
-        mask        = torch.cat([Variable(torch.BoolTensor([1] * seqIn.size(1))) for lensSeqin in lLensSeqin]).view(seqIn.size(0), -1)
-
-        if lLensSeqin != None:
-            mask        = [Variable(torch.BoolTensor([1] * lensSeqin + [0] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
+        mask        = torch.cat([Variable(torch.BoolTensor([0] * seqIn.size(1))) for _ in seqIn]).view(seqIn.size(0), -1)
+        if lLensSeqin != None:      # 如果实际长度列表不为空，则根据实际长度矩阵获取模型的实际输出和计算对应的mask矩阵
+            mask        = [Variable(torch.BoolTensor([0] * lensSeqin + [1] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
             mask        = torch.cat(mask).view(seqIn.size(0), -1)
-
-            inputIntent = self.getUsefulOutputForIntent(outputs, lLensSeqin)
-
+            # inputIntent = self.getUsefulOutputForIntent(outputs, lLensSeqin)
         maskIntent  = mask
         maskSlot    = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
 
         intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
-        slots            = self.seq2Slots(outputs, intent_d, maskSlot)
+        slots            = self.seq2Slots(inputSlot, outputs, intent_d, maskSlot)
 
         return (intent, slots)
 

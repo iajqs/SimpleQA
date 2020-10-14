@@ -167,7 +167,7 @@ def pad(pairsIded):
     return pairsIdedPaded
 
 
-def splitData(pairs):
+def splitData(pairs, batchSize=BATCHSIZE):
     """
     根据BATCHSIZE讲样例集切分成多个batch
     :param pairs:
@@ -175,10 +175,10 @@ def splitData(pairs):
     """
     random.shuffle(pairs)
     trainIterator = []
-    for start in range(0, len(pairs), BATCHSIZE):
-        trainIterator.append([[item[0] for item in pairs[start:start + BATCHSIZE]],
-                              [item[1] for item in pairs[start:start + BATCHSIZE]],
-                              [item[2] for item in pairs[start:start + BATCHSIZE]]])
+    for start in range(0, len(pairs), batchSize):
+        trainIterator.append([[item[0] for item in pairs[start:start + batchSize]],
+                              [item[1] for item in pairs[start:start + batchSize]],
+                              [item[2] for item in pairs[start:start + batchSize]]])
     return trainIterator
 
 def getMaxLengthFromBatch(batch, addLength):
@@ -186,21 +186,24 @@ def getMaxLengthFromBatch(batch, addLength):
     :param batch: 样例对集合
     :return: Batch中最长的输入序列的长度
     """
-    return max([len(seqIn) for seqIn in batch[0]]) + addLength
+    return max(MAXLEN, max([len(seqIn) for seqIn in batch[0]])) + addLength
 
-def getSeqInLengthsFromBatch(batch, addLength):
+def getSeqInLengthsFromBatch(batch, addLength, MAXLEN):
     """
     :param batch: 样例对集合
     :return: []: 所有输入序列的长度
     """
-    return [len(seqIn) + addLength for seqIn in batch[0]]
+    return [min(MAXLEN, len(seqIn) + addLength) for seqIn in batch[0]]
 
-def padBatch(batch, MAXLEN_TEMP=MAXLEN):
+def padBatch(batch, addLength, MAXLEN_TEMP=MAXLEN):
     """
     根据序列最大长度对数据进行裁剪和pading操作
     :param pairsIded: 样例对
     :return:
     """
+    batch[0]       = [item[:MAXLEN_TEMP - addLength] for item in batch[0]]
+    batch[1]       = [item[:MAXLEN_TEMP - addLength] for item in batch[1]]
+
     batchSeqIn     = [(batch[0][index] + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[0]))]
     batchSeqOut    = [(batch[1][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[1]))]
     trainIterator = [batchSeqIn, batchSeqOut, batch[2]]

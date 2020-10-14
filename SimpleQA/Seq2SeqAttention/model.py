@@ -13,7 +13,10 @@ class EncoderRNN(nn.Module):
         self.dropout     = dropout
 
         self.embedding   = nn.Embedding(input_size, emb_size, padding_idx=pading_idx)
-        self.lstm        = nn.LSTM(input_size=emb_size,  hidden_size=hidden_size, bidirectional=bidirectional)
+        self.lstm        = nn.LSTM(input_size=emb_size,
+                                   hidden_size=hidden_size,
+                                   bidirectional=bidirectional,
+                                   batch_first=True)
         self.dropout     = nn.Dropout(dropout)
 
     def forward(self, seqIn):

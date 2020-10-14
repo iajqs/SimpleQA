@@ -15,12 +15,14 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import tqdm
+
 """ 初始化模型 """
 def init_weights(model):
-    for name, param in model.parameters():
+    for param in model.parameters():
         nn.init.uniform_(param.data, -0.08, 0.08)
 
-def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE):
+def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     """
     初始化所有模型原件，并将原件传给总模型框架
     EncoderRNN、AttnIntent、DecoderIntent -> Seq2Intent
@@ -28,19 +30,21 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE):
     Seq2Intent、Seq2Slot -> Seq2Seq
     :return:
     """
-    encoder       = EncoderRNN(input_size=WORDSIZE, emb_size=EMBEDDSIZE, hidden_size=LSTMHIDSIZE, n_layers=NLAYER, dropout=DROPOUT, bidirectional=BIDIRECTIONAL)
+    encoder       = EncoderRNN(input_size=WORDSIZE, emb_size=EMBEDDSIZE, pading_idx=WPAD_SIGN, hidden_size=LSTMHIDSIZE, n_layers=NLAYER, dropout=DROPOUT, bidirectional=BIDIRECTIONAL)
 
-    attnIntent    = AttnIntent(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
-    attnSlot      = AttnSlot(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
+    attnIntent    = AttnIntent()
+    attnSlot      = AttnSlot()
 
     decoderIntent = DecoderIntent(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, intent_size=INTENTSIZE)
     decoderSlot   = DecoderSlot(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, slot_size=SLOTSIZE)
 
-    seq2Intent    = Seq2Intent(dec_intent=decoderIntent, attn_intent=attnIntent)
-    seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot)
+    seq2Intent    = Seq2Intent(dec_intent=decoderIntent, attn_intent=attnIntent, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
+    seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
 
     model         = Seq2Seq(encoder=encoder, seq2Intent=seq2Intent, seq2Slots=seq2Slots)
-    #model.apply(init_weights)
+
+    if isTrain:
+        model.apply(init_weights)
     return model
 
 
@@ -53,7 +57,7 @@ def initLossFunction(PAD_IDX=-100):
     return nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 
 """ 训练 """
-def train(iter, model=None):
+def train(iter, model=None, isTrainSlot=True, isTrainIntent=True):
     ''' 读取数据 '''
     dataSeqIn, dataSeqOut, dataIntent = getData(trainDir)                       # 获取原数据
     dictWord        = getWordDictionary(dataSeqIn)                              # 获取词典  (word2index, index2word)
@@ -82,8 +86,10 @@ def train(iter, model=None):
     epoch_lossIntent = 0                                # 定义总损失
     epoch_lossSlot   = 0
 
-    for epoch, batch in enumerate(trainIterator):
-        batch, MAXLEN = padBatch(batch)   # 按照一个batch一个batch的进行pad
+    for epoch, batch in tqdm.tqdm(enumerate(trainIterator)):
+        # MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
+        lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
+        batch       = padBatch(batch, MAXLEN_TEMP=MAXLEN)   # 按照一个batch一个batch的进行pad
         BatchSeqIn  = batch[0]          # 文本序列
         BatchSeqOut = batch[1]          # 词槽标签序列
         BatchIntent = batch[2]          # 意图标签
@@ -91,7 +97,7 @@ def train(iter, model=None):
 
         optimizer.zero_grad()
 
-        outputs      = model(BatchSeqIn)
+        outputs      = model(BatchSeqIn, lLensSeqin)
         outputIntent = outputs[0]
         outputSlots  = outputs[1]
 
@@ -101,7 +107,9 @@ def train(iter, model=None):
         lossIntent   = criterionIntent(outputIntent, BatchIntent)
         lossSlot     = criterionSlot(outputSlots, BatchSeqOut)
 
-        loss = lossIntent + lossSlot
+        loss = lossIntent * 0
+        loss = loss + lossIntent if isTrainIntent == True else loss
+        loss = loss + lossSlot if isTrainSlot == True else loss
         loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), CLIP)
@@ -112,7 +120,7 @@ def train(iter, model=None):
 
         import time
         time.sleep(0.5)
-        print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
+        # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
 
     return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, (dictWord, dictSlot, dictIntent)
 
@@ -125,8 +133,8 @@ def evaluate(model, dicts):
     dictIntent = dicts[2]                                     # 获取意图标签字典  (label2index, index2label)
     pairs      = makePairs(dataSeqIn, dataSeqOut, dataIntent)                   # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataIntent)
     pairsIded  = transIds(pairs, dictWord[0], dictSlot[0], dictIntent[0])       # 将字词都转换为数字id
-    # pairsIdedPaded = pad(pairsIded)                                           # 对数据进行pad填充与长度裁剪
-    validIterator  = splitData(pairsIded)                                # 讲样例集按BATCHSIZE大小切分成多个块
+
+    validIterator  = splitData(pairsIded)                                       # 讲样例集按BATCHSIZE大小切分成多个块
 
     ''' 设定字典大小参数 '''
     WORDSIZE   = len(dictWord[0])
@@ -142,13 +150,15 @@ def evaluate(model, dicts):
 
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
-            batch,_     = padBatch(batch)  # 按照一个batch一个batch的进行pad
-            BatchSeqIn  = batch[0]
-            BatchSeqOut = batch[1]
-            BatchIntent = batch[2]
+            # MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
+            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
+            batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
+            BatchSeqIn  = batch[0]  # 文本序列
+            BatchSeqOut = batch[1]  # 词槽标签序列
+            BatchIntent = batch[2]  # 意图标签
             BatchSeqIn, BatchSeqOut, BatchIntent = vector2Tensor(BatchSeqIn, BatchSeqOut, BatchIntent)
 
-            outputs      = model(BatchSeqIn)
+            outputs      = model(BatchSeqIn, lLensSeqin)
             outputIntent = outputs[0]
             outputSlots  = outputs[1]
 
@@ -156,7 +166,7 @@ def evaluate(model, dicts):
             outputSlots = outputSlots.view(outputSlots.size(0) * outputSlots.size(1), SLOTSIZE)
 
             lossIntent   = criterionIntent(outputIntent, BatchIntent)
-            lossSlot    = criterionSlot(outputSlots, BatchSeqOut)
+            lossSlot     = criterionSlot(outputSlots, BatchSeqOut)
 
             epoch_lossIntent += lossIntent.item()
             epoch_lossSlot   += lossSlot.item()
@@ -170,11 +180,8 @@ if __name__ == '__main__':
 
     for iter in range(TRAINITER):
         # print("-" * 20, epoch, "-" * 20)
-        trainLoss, model, dicts = train(iter, model)
+        trainLoss, model, dicts = train(iter, model, isTrainIntent=True, isTrainSlot=True)
 
-        # print()
-
-        # time.sleep(100)
         validLoss = evaluate(model, dicts)
         print("iter %d / %d: trainLoss = (intent=%f, slot=%f), validLoss = (intent=%f, slot=%f)" %
               (iter, TRAINITER, trainLoss[0], trainLoss[1], validLoss[0], validLoss[1]))
@@ -182,5 +189,5 @@ if __name__ == '__main__':
             lossMin = validLoss[0] + validLoss[1]
             modelBest = model
             save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
-    save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
+    # save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
 

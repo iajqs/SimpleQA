@@ -27,14 +27,14 @@ IUNK_SIGN     =    0         # 未知意图标签编号
 
 """ train.py """
 TRAINITER     =   20         # 迭代训练次数#
-BATCHSIZE     =   64         # 切分出来的每个数据块的大小
+BATCHSIZE     =   16         # 切分出来的每个数据块的大小
 WORDSIZE      =    0         # 词典大小
 SLOTSIZE      =    0         # 词槽字典大小
 INTENTSIZE    =    0         # 意图字典大小
 EMBEDDSIZE    =  64         # 词向量大小     // 200
-LSTMHIDSIZE   =  64         # LSTM隐含层大小 // 300
+LSTMHIDSIZE   =  128         # LSTM隐含层大小 // 300
 NLAYER        =    1         # LSTM的层数
-DROPOUT       =  0.1         # dropout系数
+DROPOUT       =  0.5         # dropout系数
 MAXLEN        =   21         # 序列最大长度（训练时）
 CLIP          =    1         # 最大梯度值
 LEARNINGRATE  = 1e-2         # 学习速率

@@ -188,7 +188,7 @@ def getMaxLengthFromBatch(batch, addLength):
     """
     return max(MAXLEN, max([len(seqIn) for seqIn in batch[0]])) + addLength
 
-def getSeqInLengthsFromBatch(batch, addLength, MAXLEN):
+def getSeqInLengthsFromBatch(batch, addLength, MAXLEN=MAXLEN):
     """
     :param batch: 样例对集合
     :return: []: 所有输入序列的长度

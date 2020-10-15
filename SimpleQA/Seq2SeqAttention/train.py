@@ -38,7 +38,7 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     decoderIntent = DecoderIntent(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, intent_size=INTENTSIZE)
     decoderSlot   = DecoderSlot(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, slot_size=SLOTSIZE)
 
-    seq2Intent    = Seq2Intent(dec_intent=decoderIntent, attn_intent=attnIntent, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
+    seq2Intent    = Seq2Intent(dec_intent=decoderIntent, attn_intent=attnIntent)
     seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
 
     model         = Seq2Seq(encoder=encoder, seq2Intent=seq2Intent, seq2Slots=seq2Slots)
@@ -87,9 +87,9 @@ def train(iter, model=None, isTrainSlot=True, isTrainIntent=True):
     epoch_lossSlot   = 0
 
     for epoch, batch in tqdm.tqdm(enumerate(trainIterator)):
-        # MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-        lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
-        batch       = padBatch(batch, MAXLEN_TEMP=MAXLEN)   # 按照一个batch一个batch的进行pad
+        MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
+        lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
+        batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)   # 按照一个batch一个batch的进行pad
         BatchSeqIn  = batch[0]          # 文本序列
         BatchSeqOut = batch[1]          # 词槽标签序列
         BatchIntent = batch[2]          # 意图标签
@@ -119,7 +119,7 @@ def train(iter, model=None, isTrainSlot=True, isTrainIntent=True):
         epoch_lossSlot  += lossSlot.item()
 
         import time
-        time.sleep(0.5)
+        time.sleep(0.4)
         # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
 
     return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, (dictWord, dictSlot, dictIntent)
@@ -150,8 +150,8 @@ def evaluate(model, dicts):
 
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
-            # MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
+            MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
+            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
             batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
             BatchSeqIn  = batch[0]  # 文本序列
             BatchSeqOut = batch[1]  # 词槽标签序列

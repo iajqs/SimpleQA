@@ -57,7 +57,7 @@ def initLossFunction(PAD_IDX=-100):
     return nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 
 """ 训练 """
-def train(iter, model=None, isTrainSlot=True, isTrainIntent=True):
+def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True):
     ''' 读取数据 '''
     dataSeqIn, dataSeqOut, dataIntent = getData(trainDir)                       # 获取原数据
     dictWord        = getWordDictionary(dataSeqIn)                              # 获取词典  (word2index, index2word)
@@ -77,7 +77,7 @@ def train(iter, model=None, isTrainSlot=True, isTrainIntent=True):
     ''' 定义模型、优化器、损失函数 '''
     model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE) if model == None else model # 初始化并返回模型
 
-    optimizer       = initOptimize(model)                # 初始化并返回优化器
+    optimizer       = initOptimize(model) if optimizer == None else optimizer              # 初始化并返回优化器
     criterionIntent = initLossFunction()                 # 初始化并返回损失函数 -- 意图
     criterionSlot   = initLossFunction(SPAD_SIGN)        # 初始化并返回损失函数 -- 词槽
 
@@ -122,7 +122,7 @@ def train(iter, model=None, isTrainSlot=True, isTrainIntent=True):
         time.sleep(0.4)
         # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
 
-    return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, (dictWord, dictSlot, dictIntent)
+    return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, optimizer, (dictWord, dictSlot, dictIntent)
 
 def evaluate(model, dicts):
 
@@ -176,11 +176,11 @@ def evaluate(model, dicts):
 if __name__ == '__main__':
     modelBest = None
     model     = None
+    optimizer = None
     lossMin   = 100
 
     for iter in range(TRAINITER):
-        # print("-" * 20, epoch, "-" * 20)
-        trainLoss, model, dicts = train(iter, model, isTrainIntent=True, isTrainSlot=True)
+        trainLoss, model, optimizer, dicts = train(iter, model=model, optimizer=optimizer, isTrainIntent=True, isTrainSlot=True)
 
         validLoss = evaluate(model, dicts)
         print("iter %d / %d: trainLoss = (intent=%f, slot=%f), validLoss = (intent=%f, slot=%f)" %
@@ -189,5 +189,14 @@ if __name__ == '__main__':
             lossMin = validLoss[0] + validLoss[1]
             modelBest = model
             save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
+        if trainLoss[0] + trainLoss[1] < 0.1:
+            for p in optimizer.param_groups:
+                p['lr'] *= 0.9
+        elif trainLoss[0] + trainLoss[1] < 0.2:
+            LEARNINGRATE = 1e-3
+            for p in optimizer.param_groups:
+                p['lr'] = 1e-3
+
+
     # save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
 

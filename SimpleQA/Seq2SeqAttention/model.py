@@ -10,7 +10,7 @@ class EncoderRNN(nn.Module):
         self.pading_idx  = pading_idx
         self.hidden_size = hidden_size
         self.n_layers    = n_layers
-        self.dropout     = dropout
+        # self.dropout     = dropout
 
         self.embedding   = nn.Embedding(input_size, emb_size, padding_idx=pading_idx)
         self.lstm        = nn.LSTM(input_size=emb_size,
@@ -22,7 +22,6 @@ class EncoderRNN(nn.Module):
     def forward(self, seqIn):
         embedded = self.dropout(self.embedding(seqIn))
         outputs, (hidden, cell) = self.lstm(embedded)
-        outputs  = self.dropout(outputs)
         return outputs, hidden
 
 
@@ -117,13 +116,15 @@ class Seq2Slots(nn.Module):
         self.weightS_out = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, inputSlot, outputs, intent_d, mask):
-        intent_d    = torch.sigmoid(self.weightI_in(intent_d))
+        # intent_d = Variable(intent_d, requires_grad=False)   # 设置slot的反向传播不影响intent的注意力层结果，
+                                                            # 认为只是拿来使用的，不需要因为slot训练结果的优劣而去修正他，减少耦合性。
+        intent_d    = torch.tanh(self.weightI_in(intent_d))
 
         inputSlot   = self.weightS_in(inputSlot)  # W^S_he * h_k
-        inputSlot   = torch.sigmoid(inputSlot)    # sigmoid(W^S_he * h_k)
+        inputSlot   = torch.tanh(inputSlot)    # sigmoid(W^S_he * h_k)
 
         outputs     = self.weightS_out(outputs)
-        outputs     = torch.sigmoid(outputs)
+        outputs     = torch.tanh(outputs)
 
         slot_d      = self.attn_slot(inputSlot, outputs, mask)
         slot        = self.decoder(outputs, slot_d, intent_d)
@@ -143,18 +144,18 @@ class Seq2Seq(nn.Module):
         return torch.cat(inputIntent).view(outputs.size(0), -1)
 
     def forward(self, seqIn, lLensSeqin=None):
-        outputs, _  = self.encoder(seqIn)
+        outputs, _      = self.encoder(seqIn)
 
         ''' 获取实际模型的输出与计算对应的长度mask矩阵 '''
-        inputIntent = outputs[:, -1, :]
-        inputSlot   = outputs
-        mask        = torch.cat([Variable(torch.BoolTensor([0] * seqIn.size(1))) for _ in seqIn]).view(seqIn.size(0), -1)
+        inputIntent     = outputs[:, -1, :]
+        inputSlot       = outputs
+        mask            = torch.cat([Variable(torch.BoolTensor([0] * seqIn.size(1))) for _ in seqIn]).view(seqIn.size(0), -1)
         if lLensSeqin != None:      # 如果实际长度列表不为空，则根据实际长度矩阵获取模型的实际输出和计算对应的mask矩阵
             mask        = [Variable(torch.BoolTensor([0] * lensSeqin + [1] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
             mask        = torch.cat(mask).view(seqIn.size(0), -1)
 
-        maskIntent  = mask
-        maskSlot    = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
+        maskIntent      = mask
+        maskSlot        = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
 
         intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
         slots            = self.seq2Slots(inputSlot, outputs, intent_d, maskSlot)

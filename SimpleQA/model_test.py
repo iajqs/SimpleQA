@@ -16,6 +16,19 @@ else:
 
 import torch
 
+def processBatch(batch):
+    MAXLEN = getMaxLengthFromBatch(batch, ADDLENGTH)
+    lLensSeqin = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
+    batch = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
+
+    BatchSeqIn = batch[0]
+    BatchSeqOut = batch[1]
+    BatchLabel = batch[2]
+    BatchSeqIn, BatchSeqOut, BatchLabel = vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel)
+
+    return MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel
+
+
 def evaluateLoss(model, dicts, dataDir):
     ''' 读取数据 '''
     dataSeqIn, dataSeqOut, dataLabel = getData(dataDir)    # 获取原数据
@@ -24,7 +37,7 @@ def evaluateLoss(model, dicts, dataDir):
     dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
     pairs     = makePairs(dataSeqIn, dataSeqOut, dataLabel)                  # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
     pairsIded = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])      # 将字词都转换为数字id
-    validIterator = splitData(pairsIded, batchSize=1)
+    validIterator = splitData(pairsIded, batchSize=64)
 
     ''' 设定字典大小参数 '''
     WORDSIZE   = len(dictWord[0])
@@ -40,24 +53,16 @@ def evaluateLoss(model, dicts, dataDir):
 
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
-            MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
-            batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
-
-            BatchSeqIn  = batch[0]
-            BatchseqOut = batch[1]
-            Batchlabel  = batch[2]
-            BatchSeqIn, BatchseqOut, Batchlabel = vector2Tensor(BatchSeqIn, BatchseqOut, Batchlabel)
+            MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel = processBatch(batch)
 
             outputs     = model(BatchSeqIn, lLensSeqin)
             outputLabel = outputs[0]
             outputSlots = outputs[1]
 
-
-            BatchseqOut = BatchseqOut.view(BatchseqOut.size(0) * BatchseqOut.size(1))
+            BatchSeqOut = BatchSeqOut.view(BatchSeqOut.size(0) * BatchSeqOut.size(1))
             outputSlots = outputSlots.view(outputSlots.size(0) * outputSlots.size(1), SLOTSIZE)
-            lossLabel   = criterionLabel(outputLabel, Batchlabel)
-            lossSlot    = criterionSlot(outputSlots, BatchseqOut)
+            lossLabel   = criterionLabel(outputLabel, BatchLabel)
+            lossSlot    = criterionSlot(outputSlots, BatchSeqOut)
 
             epoch_lossLabel += lossLabel.item()
             epoch_lossSlot  += lossSlot.item()
@@ -90,15 +95,9 @@ def evaluateAccuracy(model, dicts, dataDir):
 
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
-            MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
-            batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
-            BatchSeqIn  = batch[0]
-            BatchseqOut = batch[1]
-            Batchlabel  = batch[2]
-            BatchSeqIn, BatchseqOut, Batchlabel = vector2Tensor(BatchSeqIn, BatchseqOut, Batchlabel)
+            MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel = processBatch(batch)
 
-            outputs     = model(BatchSeqIn)
+            outputs     = model(BatchSeqIn, lLensSeqin)
             outputLabel = outputs[0]
             outputSlots = outputs[1]
 
@@ -123,6 +122,17 @@ def evaluateAccuracy(model, dicts, dataDir):
 
     # return (countLabelAcc / len(pairsIded), countSlotAcc / len(pairsIded))
 
+    wrongDic = {index: 0 for index in range(len(dictSlot[0]))}
+    for i in range(len(correct_intents)):
+        # print(correct_intents[i], pred_intents[i])
+        if correct_intents[i] != pred_intents[i]:
+            item = correct_intents[i]
+            wrongDic[item] = wrongDic[item] + 1
+    #
+    # print(len(correct_intents))
+    # for item in wrongDic:
+    #     print(item, wrongDic[item])
+
     correct_intents = np.array(correct_intents)
     pred_intents    = np.array(pred_intents)
     accuracy        = (correct_intents==pred_intents)
@@ -132,27 +142,6 @@ def evaluateAccuracy(model, dicts, dataDir):
     return ("acc_intent:", accuracy, "slot, precision=%f, recall=%f, f1=%f" % (precision, recall, f1), "semantic error(intent, slots are all correct): %f", semantic_error)
 
 
-def test_predict(model):
-
-    batch = []
-    batch.append([[1, 2, 3, 4], [1, 2, 3, 4]])
-    batch.append([[1, 2, 3, 4]])
-    batch.append([1, 2])
-
-    lLensSeqin = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
-    batch = padBatch(batch, MAXLEN_TEMP=MAXLEN)
-    BatchSeqIn = batch[0]
-    BatchseqOut = batch[1]
-    Batchlabel = batch[2]
-    BatchSeqIn, BatchseqOut, Batchlabel = vector2Tensor(BatchSeqIn, BatchseqOut, Batchlabel)
-
-    print(BatchSeqIn, lLensSeqin)
-    model.eval()
-    outputs = model.encoder.embedding(BatchSeqIn)
-    outputs, (hidden, cell) = model.encoder.lstm(outputs)
-    print(outputs.size())
-    print(outputs[0][0])
-    print(outputs[1][0])
 
 modelLoaded, dicts = load_model(modelDir + "/base", "base.model", "base.json")
 
@@ -164,12 +153,8 @@ model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=False)
 model.load_state_dict(modelLoaded)
 model.eval()
 
-# test_predict(model)
-
 print(WORDSIZE, SLOTSIZE, INTENTSIZE)
 
-# print(evaluateLoss(model, dicts, testDir))      # (0.302971917404128, 0.1861887446471623)
-print(evaluateAccuracy(model, dicts, testDir))  # (0.9540873460246361, 0.966896114981263)
+print(evaluateLoss(model, dicts, validDir))      # (0.302971917404128, 0.1861887446471623)
+print(evaluateAccuracy(model, dicts, validDir))  # (0.9540873460246361, 0.966896114981263)
 
-
-# print(computeF1Score([["B", "O"], ["B", "O"]], [["O", "O"], ["B", "O"]]))

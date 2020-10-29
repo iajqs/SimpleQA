@@ -9,6 +9,9 @@ import random
 import torch
 
 
+""" const """
+
+
 """ 读取数据 """
 def getData(dataDir):
     """
@@ -26,10 +29,10 @@ def getData(dataDir):
 
     '''seq.in'''
     with open(pathSeqIn, 'r', encoding='utf-8') as fr:
-        dataSeqIn = [normalizeString(line.strip()).split(' ') for line in fr.readlines()]
+        dataSeqIn = [["[CLS]"] + normalizeString(line.strip()).split(' ') for line in fr.readlines()]
     '''seq.out'''
     with open(pathSeqOut, 'r', encoding='utf-8') as fr:
-        dataSeqOut = [normalizeString(line.strip()).split(' ') for line in fr.readlines()]
+        dataSeqOut = [["O"] + normalizeString(line.strip()).split(' ') for line in fr.readlines()]
     '''label'''
     with open(pathLabel, 'r', encoding='utf-8') as fr:
         dataLabel = [line.strip() for line in fr.readlines()]
@@ -188,6 +191,16 @@ def getMaxLengthFromBatch(batch, addLength):
     """
     return max(MAXLEN, max([len(seqIn) for seqIn in batch[0]])) + addLength
 
+def getValidLengthsFromBatch(batch, addLength, MAXLEN=MAXLEN):
+    """
+    获取计算mask矩阵的有效长度
+    :param batch:
+    :param addLength:
+    :param MAXLEN:
+    :return:
+    """
+    return [max(MAXLEN, len(seqIn) + addLength) for seqIn in batch[0]]
+
 def getSeqInLengthsFromBatch(batch, addLength, MAXLEN=MAXLEN):
     """
     :param batch: 样例对集合
@@ -195,7 +208,8 @@ def getSeqInLengthsFromBatch(batch, addLength, MAXLEN=MAXLEN):
     """
     return [min(MAXLEN, len(seqIn) + addLength) for seqIn in batch[0]]
 
-def padBatch(batch, addLength, MAXLEN_TEMP=MAXLEN):
+
+def padBatch(batch, addLength, word2index, MAXLEN_TEMP=MAXLEN):
     """
     根据序列最大长度对数据进行裁剪和pading操作
     :param pairsIded: 样例对
@@ -204,15 +218,16 @@ def padBatch(batch, addLength, MAXLEN_TEMP=MAXLEN):
     batch[0]       = [item[:MAXLEN_TEMP - addLength] for item in batch[0]]
     batch[1]       = [item[:MAXLEN_TEMP - addLength] for item in batch[1]]
 
-    batchSeqIn     = [(batch[0][index] + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[0]))]
+    batchSeqIn     = [(batch[0][index] + [WPAD_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[0]))]
     batchSeqOut    = [(batch[1][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[1]))]
+    for index in range(len(batchSeqIn)): batchSeqIn[index][MAXLEN_TEMP - 1] = word2index["[SEP]"]
     trainIterator = [batchSeqIn, batchSeqOut, batch[2]]
 
     return trainIterator
 
 def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel):
-    BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")
-    BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
-    BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
+    BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")
+    BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
+    BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
 
     return BatchSeqIn, BatchSeqOut, BatchLabel

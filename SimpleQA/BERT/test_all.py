@@ -14,10 +14,10 @@
 """
 import sys
 if sys.platform == "win32":
-    from SimpleQA.Seq2SeqAttention.model import *
-    from SimpleQA.Seq2SeqAttention.const import *
-    from SimpleQA.Seq2SeqAttention.dataUtil import *
-    from SimpleQA.Seq2SeqAttention.ouptutUtil import *
+    from .model import *
+    from .const import *
+    from .dataUtil import *
+    from .ouptutUtil import *
 else:
     from .model import *
     from .const import *
@@ -165,15 +165,3 @@ class TestDataUtil:
         print(BatchIntent)
 
 
-import torch
-
-class TestModel:
-    def test_EncoderRNN(self):
-        WORDSIZE = 20
-
-        inputs = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]], dtype=torch.long, device="cpu")
-        encoder = EncoderRNN(input_size=WORDSIZE, emb_size=EMBEDDSIZE, pading_idx=WPAD_SIGN, hidden_size=LSTMHIDSIZE,
-                             n_layers=NLAYER, dropout=DROPOUT, bidirectional=BIDIRECTIONAL)
-
-        result = encoder(inputs)
-        print(result[0])

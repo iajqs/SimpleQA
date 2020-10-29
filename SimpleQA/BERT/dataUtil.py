@@ -1,6 +1,6 @@
 import sys
 if sys.platform == "win32":
-    from SimpleQA.Seq2SeqAttention.const import *
+    from .const import *
 else:
     from .const import *
 
@@ -37,17 +37,17 @@ def getData(dataDir):
     return dataSeqIn, dataSeqOut, dataLabel
 
 """ 获取词典 """
-def getWordDictionary(dataSeqin):
+def getWordDictionary(tokenizer):
     """
     根据输入序列数据获取词槽标签字典
     :param dataSeqin:
     :return:
     """
-    setWord = set()
-    for line in dataSeqin:
-        for word in line:
-            setWord.add(word)
-    word2index = {word: index + COUNTWSIGN for index, word in enumerate(setWord)}
+    word2index = {}
+    for token in tokenizer.vocab.items():
+        if token[1] < COUNTWSIGN:
+            continue
+        word2index[token[0]] = token[1]
     word2index["<UNK_WORD>"] = WUNK_SIGN
     word2index["<PAD_WORD>"] = WPAD_SIGN
     word2index["<EOS_WORD>"] = WEOS_SIGN

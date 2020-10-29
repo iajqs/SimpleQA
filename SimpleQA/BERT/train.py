@@ -1,10 +1,10 @@
 import sys
 print(sys.platform)
 if sys.platform == "win32":
-    from SimpleQA.Seq2SeqAttention.model import *
-    from SimpleQA.Seq2SeqAttention.const import *
-    from SimpleQA.Seq2SeqAttention.dataUtil import *
-    from SimpleQA.Seq2SeqAttention.ouptutUtil import *
+    from SimpleQA.BERT.model import *
+    from SimpleQA.BERT.const import *
+    from SimpleQA.BERT.dataUtil import *
+    from SimpleQA.BERT.ouptutUtil import *
 else:
     from .model import *
     from .const import *
@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from pytorch_pretrained_bert import BertTokenizer, BertModel
 import tqdm
 
 """ 初始化模型 """
@@ -30,7 +31,8 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     Seq2Intent、Seq2Slot -> Seq2Seq
     :return:
     """
-    encoder       = EncoderRNN(input_size=WORDSIZE, emb_size=EMBEDDSIZE, pading_idx=WPAD_SIGN, hidden_size=LSTMHIDSIZE, n_layers=NLAYER, dropout=DROPOUT, bidirectional=BIDIRECTIONAL)
+    BERTModel     = BertModel.from_pretrained(modelDir + "\\bert\\bert-base-uncased")
+    encoder       = EncoderRNN(BERTModel)
 
     attnIntent    = AttnIntent()
     attnSlot      = AttnSlot()
@@ -60,7 +62,8 @@ def initLossFunction(PAD_IDX=-100):
 def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True):
     ''' 读取数据 '''
     dataSeqIn, dataSeqOut, dataIntent = getData(trainDir)                       # 获取原数据
-    dictWord        = getWordDictionary(dataSeqIn)                              # 获取词典  (word2index, index2word)
+    tokenizer       = BertTokenizer.from_pretrained(modelDir + "\\bert\\uncased") #
+    dictWord        = getWordDictionary(tokenizer)                              # 获取词典  (word2index, index2word)
     dictSlot        = getSlotDictionary(dataSeqOut)                             # 获取词槽标签字典  (slot2index, index2slot)
     dictIntent      = getIntentDictionary(dataIntent)                           # 获取意图标签字典  (intent2index, index2intent)
     pairs           = makePairs(dataSeqIn, dataSeqOut, dataIntent)              # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataIntent)
@@ -86,7 +89,7 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
     epoch_lossIntent = 0                                # 定义总损失
     epoch_lossSlot   = 0
 
-    for epoch, batch in tqdm.tqdm(enumerate(trainIterator)):
+    for epoch, batch in enumerate(trainIterator):
         MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
         lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
         batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)   # 按照一个batch一个batch的进行pad
@@ -94,7 +97,6 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
         BatchSeqOut = batch[1]          # 词槽标签序列
         BatchIntent = batch[2]          # 意图标签
         BatchSeqIn, BatchSeqOut, BatchIntent = vector2Tensor(BatchSeqIn, BatchSeqOut, BatchIntent)
-
         optimizer.zero_grad()
 
         outputs      = model(BatchSeqIn, lLensSeqin)
@@ -116,12 +118,12 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
         optimizer.step()
 
         epoch_lossIntent += lossIntent.item()
-        epoch_lossSlot  += lossSlot.item()
+        epoch_lossSlot   += lossSlot.item()
 
         import time
         time.sleep(0.4)
-        # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
-
+        print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
+        # print(model.encoder.BERTModel.embeddings.word_embeddings(torch.LongTensor([0, 1, 2]))[:, 0])
     return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, optimizer, (dictWord, dictSlot, dictIntent)
 
 def evaluate(model, dicts):
@@ -180,7 +182,7 @@ if __name__ == '__main__':
     lossMin   = 100
 
     for iter in range(TRAINITER):
-        trainLoss, model, optimizer, dicts = train(iter, model=model, optimizer=optimizer, isTrainIntent=True, isTrainSlot=True)
+        trainLoss, model, optimizer, dicts = train(iter, model=model, optimizer=optimizer, isTrainIntent=True, isTrainSlot=False)
 
         validLoss = evaluate(model, dicts)
         print("iter %d / %d: trainLoss = (intent=%f, slot=%f), validLoss = (intent=%f, slot=%f)" %
@@ -188,7 +190,7 @@ if __name__ == '__main__':
         if validLoss[0] + validLoss[1] < lossMin:
             lossMin = validLoss[0] + validLoss[1]
             modelBest = model
-            save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
+            save_model(modelBest, dicts, modelDir + "/bert", "bert.model", "bert.json")
         if trainLoss[0] + trainLoss[1] < 0.1:
             for p in optimizer.param_groups:
                 p['lr'] *= 0.9

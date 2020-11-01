@@ -55,7 +55,7 @@ def evaluateLoss(model, dicts, dataDir):
         for i, batch in enumerate(validIterator):
             MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel = processBatch(batch)
 
-            outputs     = model(BatchSeqIn, lLensSeqin)
+            outputs, slot_crf = model(BatchSeqIn, BatchSeqOut, lLensSeqin)
             outputLabel = outputs[0]
             outputSlots = outputs[1]
 
@@ -97,41 +97,20 @@ def evaluateAccuracy(model, dicts, dataDir):
         for i, batch in enumerate(validIterator):
             MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel = processBatch(batch)
 
-            outputs     = model(BatchSeqIn, lLensSeqin)
+            outputs, slot_crf = model(BatchSeqIn, BatchSeqOut, lLensSeqin)
             outputLabel = outputs[0]
             outputSlots = outputs[1]
 
             """ 正确率计算 """
             _, predictLabel = torch.max(outputLabel, 1)
             _, predictSlot  = torch.max(outputSlots, 2)
+            predictSlot     = model.seq2Slots.crf.CRF.decode(outputSlots)
 
             for index in range(len(batch[0])):
                 correct_intents.append(batch[2][index])
                 pred_intents.append(predictLabel.data.tolist()[index])
-                pred_slots.append([dictSlot[1][str(item)] for item in predictSlot.data.tolist()[index][:lLensSeqin[index] - 1]])
+                pred_slots.append([dictSlot[1][str(item)] for item in predictSlot[index][:lLensSeqin[index] - 1]])
                 correct_slots.append([dictSlot[1][str(item)] for item in batch[1][index][:lLensSeqin[index] - 1]])
-
-                # ''' 意图正确率计算 '''
-                # if batch[2][index] == predictLabel.data.tolist()[index]:
-                #     countLabelAcc += 1
-                # ''' 词槽正确率计算 '''
-                # for index_2 in range(lLensSeqin[index] - 1):
-                #     # print(index_2, batch[1][index][index_2], predictSlot.data.tolist()[index][index_2])
-                #     if batch[1][index][index_2] == predictSlot.data.tolist()[index][index_2]:
-                #         countSlotAcc += 1 / (lLensSeqin[index] - 1)
-
-    # return (countLabelAcc / len(pairsIded), countSlotAcc / len(pairsIded))
-
-    wrongDic = {index: 0 for index in range(len(dictSlot[0]))}
-    for i in range(len(correct_intents)):
-        # print(correct_intents[i], pred_intents[i])
-        if correct_intents[i] != pred_intents[i]:
-            item = correct_intents[i]
-            wrongDic[item] = wrongDic[item] + 1
-    #
-    # print(len(correct_intents))
-    # for item in wrongDic:
-    #     print(item, wrongDic[item])
 
     correct_intents = np.array(correct_intents)
     pred_intents    = np.array(pred_intents)
@@ -142,19 +121,21 @@ def evaluateAccuracy(model, dicts, dataDir):
     return ("acc_intent:", accuracy, "slot, precision=%f, recall=%f, f1=%f" % (precision, recall, f1), "semantic error(intent, slots are all correct): %f", semantic_error)
 
 
+def test():
+    modelLoaded, dicts = load_model(modelDir + "/base", "base.model", "base.json")
 
-modelLoaded, dicts = load_model(modelDir + "/base", "base.model", "base.json")
+    WORDSIZE    = len(dicts[0][0])
+    SLOTSIZE    = len(dicts[1][0])
+    INTENTSIZE  = len(dicts[2][0])
 
-WORDSIZE    = len(dicts[0][0])
-SLOTSIZE    = len(dicts[1][0])
-INTENTSIZE  = len(dicts[2][0])
+    model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=False)
+    model.load_state_dict(modelLoaded)
+    model.eval()
 
-model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=False)
-model.load_state_dict(modelLoaded)
-model.eval()
+    # print(WORDSIZE, SLOTSIZE, INTENTSIZE)
 
-print(WORDSIZE, SLOTSIZE, INTENTSIZE)
+    print(evaluateLoss(model, dicts, testDir))      # (0.1551565093395766, 0.08468043408356607)
+    print(evaluateAccuracy(model, dicts, testDir))  # (0.972, 0.95121239)
 
-print(evaluateLoss(model, dicts, validDir))      # (0.1551565093395766, 0.08468043408356607)
-print(evaluateAccuracy(model, dicts, validDir))  # (0.972, 0.95121239)
-
+if __name__ == '__main__':
+    test()

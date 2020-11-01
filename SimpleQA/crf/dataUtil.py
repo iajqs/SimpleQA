@@ -44,9 +44,15 @@ def getWordDictionary(dataSeqin):
     :return:
     """
     setWord = set()
+    word2count = dict()
     for line in dataSeqin:
         for word in line:
             setWord.add(word)
+            if word in word2count:
+                word2count[word] = word2count[word] + 1
+            elif word not in word2count:
+                word2count[word] = 1
+    setWord = {word for word in word2count if word2count[word] >= MIN_WORD_COUNT}
     word2index = {word: index + COUNTWSIGN for index, word in enumerate(setWord)}
     word2index["<UNK_WORD>"] = WUNK_SIGN
     word2index["<PAD_WORD>"] = WPAD_SIGN

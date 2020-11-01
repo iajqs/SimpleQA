@@ -5,11 +5,13 @@ if sys.platform == "win32":
     from SimpleQA.crf.const import *
     from SimpleQA.crf.dataUtil import *
     from SimpleQA.crf.ouptutUtil import *
+    from SimpleQA.crf.model_test import *
 else:
     from .model import *
     from .const import *
     from .dataUtil import *
     from .ouptutUtil import *
+    from .model_test import *
 
 import torch
 import torch.nn as nn
@@ -44,7 +46,7 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot, crf=crf, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
 
     model         = Seq2Seq(encoder=encoder, seq2Intent=seq2Intent, seq2Slots=seq2Slots)
-
+    model         = model.cuda() if torch.cuda.is_available() else model
     if isTrain:
         model.apply(init_weights)
     return model
@@ -69,7 +71,7 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
     pairsIded       = transIds(pairs, dictWord[0], dictSlot[0], dictIntent[0])  # 将字词都转换为数字id
     # pairsIdedPaded  = pad(pairsIded)                                          # 对数据进行pad填充与长度裁剪
     trainIterator   = splitData(pairsIded)                                      # 讲样例集按BATCHSIZE大小切分成多个块
-
+    trainIterator = trainIterator[:len(trainIterator) - len(trainIterator) // 10]
 
     ''' 设定字典大小参数 '''
     WORDSIZE   = len(dictWord[0])
@@ -87,10 +89,10 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
     model.train()                                       # 设定模型状态为训练状态
     epoch_lossIntent = 0                                # 定义总损失
     epoch_lossSlot   = 0
-
+    epoch_lossCRF    = 0
     for epoch, batch in tqdm.tqdm(enumerate(trainIterator)):
         MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-        lLensSeqin  = getValidLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
+        lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
         batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)   # 按照一个batch一个batch的进行pad
         BatchSeqIn  = batch[0]          # 文本序列
         BatchSeqOut = batch[1]          # 词槽标签序列
@@ -112,20 +114,20 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
         loss = lossIntent * 0
         loss = loss + lossIntent if isTrainIntent == True else loss
         loss = loss + lossSlot if isTrainSlot == True else loss
-        loss = loss - slot_crf
+        loss = loss - slot_crf / BATCHSIZE
         loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), CLIP)
         optimizer.step()
 
         epoch_lossIntent += lossIntent.item()
-        epoch_lossSlot  += lossSlot.item()
+        epoch_lossSlot   += lossSlot.item()
+        epoch_lossCRF    -= slot_crf.item()
+        # import time
+        # time.sleep(0.4)
+        # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f、crfLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot, -slot_crf))
 
-        import time
-        time.sleep(0.4)
-        # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
-
-    return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, optimizer, (dictWord, dictSlot, dictIntent)
+    return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator), epoch_lossCRF / len(trainIterator)),  model, optimizer, (dictWord, dictSlot, dictIntent)
 
 def evaluate(model, dicts):
 
@@ -149,19 +151,19 @@ def evaluate(model, dicts):
     ''' 模型验证 '''
     model.eval()
     epoch_lossIntent = 0
-    epoch_lossSlot  = 0
-
+    epoch_lossSlot   = 0
+    epoch_lossCRF    = 0
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
             MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-            lLensSeqin  = getValidLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
+            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
             batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
             BatchSeqIn  = batch[0]  # 文本序列
             BatchSeqOut = batch[1]  # 词槽标签序列
             BatchIntent = batch[2]  # 意图标签
             BatchSeqIn, BatchSeqOut, BatchIntent = vector2Tensor(BatchSeqIn, BatchSeqOut, BatchIntent)
 
-            outputs      = model(BatchSeqIn, lLensSeqin)
+            outputs, slot_crf = model(seqIn=BatchSeqIn, seqOut=BatchSeqOut, lLensSeqin=lLensSeqin)
             outputIntent = outputs[0]
             outputSlots  = outputs[1]
 
@@ -173,7 +175,8 @@ def evaluate(model, dicts):
 
             epoch_lossIntent += lossIntent.item()
             epoch_lossSlot   += lossSlot.item()
-    return (epoch_lossIntent / len(validIterator), epoch_lossSlot / len(validIterator))
+            epoch_lossCRF    -= slot_crf.item()
+    return (epoch_lossIntent / len(validIterator), epoch_lossSlot / len(validIterator), epoch_lossCRF / len(validIterator))
 
 
 if __name__ == '__main__':
@@ -186,12 +189,16 @@ if __name__ == '__main__':
         trainLoss, model, optimizer, dicts = train(iter, model=model, optimizer=optimizer, isTrainIntent=True, isTrainSlot=True)
 
         validLoss = evaluate(model, dicts)
-        print("iter %d / %d: trainLoss = (intent=%f, slot=%f), validLoss = (intent=%f, slot=%f)" %
-              (iter, TRAINITER, trainLoss[0], trainLoss[1], validLoss[0], validLoss[1]))
-        if validLoss[0] + validLoss[1] < lossMin:
-            lossMin = validLoss[0] + validLoss[1]
+        print("iter %d / %d: trainLoss = (intent=%f, slot=%f, crf=%f), validLoss = (intent=%f, slot=%f, crf=%f)" %
+              (iter, TRAINITER, trainLoss[0], trainLoss[1], trainLoss[2], validLoss[0], validLoss[1], validLoss[2]))
+
+
+        if validLoss[0] + validLoss[1] + validLoss[2] < lossMin:
+            lossMin = validLoss[0] + validLoss[1] + validLoss[2]
             modelBest = model
             save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
+            # print("update", end='\t')
+            test()
         if trainLoss[0] + trainLoss[1] < 0.1:
             for p in optimizer.param_groups:
                 p['lr'] *= 0.9
@@ -200,6 +207,4 @@ if __name__ == '__main__':
             for p in optimizer.param_groups:
                 p['lr'] = 1e-3
 
-
-    # save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
-
+        print()

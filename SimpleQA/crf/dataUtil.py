@@ -29,7 +29,7 @@ def getData(dataDir):
         dataSeqIn = [normalizeString(line.strip()).split(' ') for line in fr.readlines()]
     '''seq.out'''
     with open(pathSeqOut, 'r', encoding='utf-8') as fr:
-        dataSeqOut = [normalizeString(line.strip()).split(' ') for line in fr.readlines()]
+        dataSeqOut = [line.strip().split(' ') for line in fr.readlines()]
     '''label'''
     with open(pathLabel, 'r', encoding='utf-8') as fr:
         dataLabel = [line.strip() for line in fr.readlines()]
@@ -95,7 +95,7 @@ def normalizeString(s):
     :param s:
     :return:
     """
-    s = re.sub(r"([.!?])", r".", s)
+    s = re.sub(r"([.!?])", r"", s)
     s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r" ", s)
     return s
 
@@ -188,22 +188,12 @@ def getMaxLengthFromBatch(batch, addLength):
     """
     return max(MAXLEN, max([len(seqIn) for seqIn in batch[0]])) + addLength
 
-def getValidLengthsFromBatch(batch, addLength, MAXLEN=MAXLEN):
-    """
-    获取计算mask矩阵的有效长度
-    :param batch:
-    :param addLength:
-    :param MAXLEN:
-    :return:
-    """
-    return [len(seqIn) + addLength for seqIn in batch[0]]
-
 def getSeqInLengthsFromBatch(batch, addLength, MAXLEN=MAXLEN):
     """
     :param batch: 样例对集合
     :return: []: 所有输入序列的长度
     """
-    return [len(seqIn) + addLength for seqIn in batch[0]]
+    return [min(MAXLEN, len(seqIn) + addLength) for seqIn in batch[0]]
 
 
 def padBatch(batch, addLength, MAXLEN_TEMP=MAXLEN):
@@ -222,8 +212,8 @@ def padBatch(batch, addLength, MAXLEN_TEMP=MAXLEN):
     return trainIterator
 
 def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel):
-    BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")
-    BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
-    BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
+    BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")
+    BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
+    BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
 
     return BatchSeqIn, BatchSeqOut, BatchLabel

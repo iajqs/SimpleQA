@@ -22,7 +22,7 @@ import tqdm
 """ 初始化模型 """
 def init_weights(model):
     for param in model.parameters():
-        nn.init.uniform_(param.data, -0.08, 0.08)
+        nn.init.uniform_(param.data, -0.1, 0.1)
 
 def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     """
@@ -193,8 +193,8 @@ if __name__ == '__main__':
               (iter, TRAINITER, trainLoss[0], trainLoss[1], trainLoss[2], validLoss[0], validLoss[1], validLoss[2]))
 
 
-        if validLoss[0] + validLoss[1] + validLoss[2] < lossMin:
-            lossMin = validLoss[0] + validLoss[1] + validLoss[2]
+        if validLoss[2] < lossMin:
+            lossMin = validLoss[2]
             modelBest = model
             save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
             # print("update", end='\t')

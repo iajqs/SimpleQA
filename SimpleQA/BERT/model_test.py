@@ -16,33 +16,35 @@ else:
 
 import torch
 
-def processBatch(batch):
+def processBatch(batch, dictBERTWord, dictDataWord):
     MAXLEN = getMaxLengthFromBatch(batch, ADDLENGTH)
     lLensSeqin = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN)
-    batch = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
+    batch = padBatch(batch, ADDLENGTH, BERTWord2index=dictBERTWord[0], DataWord2index=dictDataWord[0], MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
 
-    BatchSeqIn = batch[0]
-    BatchSeqOut = batch[1]
-    BatchLabel = batch[2]
-    BatchSeqIn, BatchSeqOut, BatchLabel = vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel)
+    BatchBERTSeqIn = batch[0]
+    BatchDataSeqIn = batch[1]
+    BatchSeqOut = batch[2]
+    BatchLabel = batch[3]
+    BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel = vector2Tensor(BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel)
 
-    return MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel
+    return MAXLEN, lLensSeqin, BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel
 
 
 def evaluateLoss(model, dicts, dataDir):
-    ''' 读取数据 '''
-    dataSeqIn, dataSeqOut, dataLabel = getData(dataDir)    # 获取原数据
-    dictWord  = dicts[0]                                    # 获取词典  (word2index, index2word)
-    dictSlot  = dicts[1]                                    # 获取词槽标签字典  (slot2index, index2slot)
-    dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
-    pairs     = makePairs(dataSeqIn, dataSeqOut, dataLabel)                  # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
-    pairsIded = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])      # 将字词都转换为数字id
-    validIterator = splitData(pairsIded, batchSize=64)
+    dataSeqIn, dataSeqOut, dataIntent = getData(validDir)     # 获取原数据
+    dictBERTWord = dicts[0]                                     # 获取词典  (word2index, index2word)
+    dictDataWord = dicts[1]
+    dictSlot   = dicts[2]                                     # 获取词槽标签字典  (slot2index, index2slot)
+    dictIntent = dicts[3]                                     # 获取意图标签字典  (label2index, index2label)
+    pairs      = makePairs(dataSeqIn, dataSeqOut, dataIntent)                   # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataIntent)
+    pairsIded  = transIds(pairs, dictBERTWord[0], dictDataWord[0], dictSlot[0], dictIntent[0])       # 将字词都转换为数字id
+
+    validIterator  = splitData(pairsIded)                                       # 讲样例集按BATCHSIZE大小切分成多个块
 
     ''' 设定字典大小参数 '''
-    WORDSIZE   = len(dictWord[0])
+    WORDSIZE   = len(dictDataWord[0])
     SLOTSIZE   = len(dictSlot[0])
-    INTENTSIZE = len(dictLabel[0])
+    INTENTSIZE = len(dictIntent[0])
 
     criterionLabel = initLossFunction()           # 初始化并返回损失函数 -- 意图
     criterionSlot  = initLossFunction(SPAD_SIGN)  # 初始化并返回损失函数 -- 词槽
@@ -53,9 +55,9 @@ def evaluateLoss(model, dicts, dataDir):
 
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
-            MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel = processBatch(batch)
+            MAXLEN, lLensSeqin, BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel = processBatch(batch, dictBERTWord, dictDataWord)
 
-            outputs     = model(BatchSeqIn, lLensSeqin)
+            outputs     = model(BatchBERTSeqIn, BatchDataSeqIn, lLensSeqin)
             outputLabel = outputs[0]
             outputSlots = outputs[1]
 
@@ -70,18 +72,21 @@ def evaluateLoss(model, dicts, dataDir):
 
 def evaluateAccuracy(model, dicts, dataDir):
     ''' 读取数据 '''
-    dataSeqIn, dataSeqOut, dataLabel = getData(dataDir)     # 获取原数据
-    dictWord  = dicts[0]                                    # 获取词典  (word2index, index2word)
-    dictSlot  = dicts[1]                                    # 获取词槽标签字典  (slot2index, index2slot)
-    dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
-    pairs     = makePairs(dataSeqIn, dataSeqOut, dataLabel)                  # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataLabel)
-    pairsIded = transIds(pairs, dictWord[0], dictSlot[0], dictLabel[0])      # 将字词都转换为数字id
-    validIterator = splitData(pairsIded, batchSize=64)
+    dataSeqIn, dataSeqOut, dataIntent = getData(validDir)     # 获取原数据
+    dictBERTWord = dicts[0]                                     # 获取词典  (word2index, index2word)
+    dictDataWord = dicts[1]
+    dictSlot   = dicts[2]                                     # 获取词槽标签字典  (slot2index, index2slot)
+    dictIntent = dicts[3]                                     # 获取意图标签字典  (label2index, index2label)
+    pairs      = makePairs(dataSeqIn, dataSeqOut, dataIntent)                   # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataIntent)
+    pairsIded  = transIds(pairs, dictBERTWord[0], dictDataWord[0], dictSlot[0], dictIntent[0])       # 将字词都转换为数字id
+
+    validIterator  = splitData(pairsIded)                                       # 讲样例集按BATCHSIZE大小切分成多个块
+
 
     ''' 设定字典大小参数 '''
-    WORDSIZE   = len(dictWord[0])
+    WORDSIZE   = len(dictDataWord[0])
     SLOTSIZE   = len(dictSlot[0])
-    INTENTSIZE = len(dictLabel[0])
+    INTENTSIZE = len(dictIntent[0])
 
     ''' 模型验证 '''
     model.eval()
@@ -93,11 +98,11 @@ def evaluateAccuracy(model, dicts, dataDir):
     correct_slots   = []
     pred_slots      = []
 
+    # count = 0
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
-            MAXLEN, lLensSeqin, BatchSeqIn, BatchSeqOut, BatchLabel = processBatch(batch)
-
-            outputs     = model(BatchSeqIn, lLensSeqin)
+            MAXLEN, lLensSeqin, BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel = processBatch(batch, dictBERTWord, dictDataWord)
+            outputs     = model(BatchBERTSeqIn, BatchDataSeqIn, lLensSeqin)
             outputLabel = outputs[0]
             outputSlots = outputs[1]
 
@@ -106,33 +111,11 @@ def evaluateAccuracy(model, dicts, dataDir):
             _, predictSlot  = torch.max(outputSlots, 2)
 
             for index in range(len(batch[0])):
-                correct_intents.append(batch[2][index])
+                correct_intents.append(batch[3][index])
                 pred_intents.append(predictLabel.data.tolist()[index])
-                pred_slots.append([dictSlot[1][str(item)] for item in predictSlot.data.tolist()[index][:lLensSeqin[index] - 1]])
-                correct_slots.append([dictSlot[1][str(item)] for item in batch[1][index][:lLensSeqin[index] - 1]])
-
-                # ''' 意图正确率计算 '''
-                # if batch[2][index] == predictLabel.data.tolist()[index]:
-                #     countLabelAcc += 1
-                # ''' 词槽正确率计算 '''
-                # for index_2 in range(lLensSeqin[index] - 1):
-                #     # print(index_2, batch[1][index][index_2], predictSlot.data.tolist()[index][index_2])
-                #     if batch[1][index][index_2] == predictSlot.data.tolist()[index][index_2]:
-                #         countSlotAcc += 1 / (lLensSeqin[index] - 1)
-
-    # return (countLabelAcc / len(pairsIded), countSlotAcc / len(pairsIded))
-    print(pred_slots)
-    print(correct_slots)
-    wrongDic = {index: 0 for index in range(len(dictSlot[0]))}
-    for i in range(len(correct_intents)):
-        # print(correct_intents[i], pred_intents[i])
-        if correct_intents[i] != pred_intents[i]:
-            item = correct_intents[i]
-            wrongDic[item] = wrongDic[item] + 1
-    #
-    # print(len(correct_intents))
-    # for item in wrongDic:
-    #     print(item, wrongDic[item])
+                correct_slots.append([dictSlot[1][str(item)] for item in batch[2][index][1:lLensSeqin[index] - 1]])
+                pred_slots.append(
+                    [dictSlot[1][str(item)] for item in predictSlot.data.tolist()[index][1:lLensSeqin[index] - 1]])
 
     correct_intents = np.array(correct_intents)
     pred_intents    = np.array(pred_intents)
@@ -146,9 +129,9 @@ def evaluateAccuracy(model, dicts, dataDir):
 
 modelLoaded, dicts = load_model(modelDir + "/bert", "bert.model", "bert.json")
 
-WORDSIZE    = len(dicts[0][0])
-SLOTSIZE    = len(dicts[1][0])
-INTENTSIZE  = len(dicts[2][0])
+WORDSIZE    = len(dicts[1][0])
+SLOTSIZE    = len(dicts[2][0])
+INTENTSIZE  = len(dicts[3][0])
 
 model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=False)
 model.load_state_dict(modelLoaded)

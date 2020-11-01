@@ -2,17 +2,17 @@ import sys
 import numpy as np
 
 if sys.platform == "win32":
-    from SimpleQA.Seq2SeqAttention.ouptutUtil import *
-    from SimpleQA.Seq2SeqAttention.const import *
-    from SimpleQA.Seq2SeqAttention.train import *
-    from SimpleQA.Seq2SeqAttention.model import *
-    from SimpleQA.Seq2SeqAttention.utils import *
+    from SimpleQA.Base_Seq2SeqAttention.ouptutUtil import *
+    from SimpleQA.Base_Seq2SeqAttention.const import *
+    from SimpleQA.Base_Seq2SeqAttention.train import *
+    from SimpleQA.Base_Seq2SeqAttention.model import *
+    from SimpleQA.Base_Seq2SeqAttention.utils import *
 else:
-    from .Seq2SeqAttention.ouptutUtil import *
-    from .Seq2SeqAttention.const import *
-    from .Seq2SeqAttention.train import *
-    from .Seq2SeqAttention.model import *
-    from .Seq2SeqAttention.utils import *
+    from .ouptutUtil import *
+    from .const import *
+    from .train import *
+    from .model import *
+    from .utils import *
 
 import torch
 
@@ -108,8 +108,8 @@ def evaluateAccuracy(model, dicts, dataDir):
             for index in range(len(batch[0])):
                 correct_intents.append(batch[2][index])
                 pred_intents.append(predictLabel.data.tolist()[index])
-                correct_slots.append([dictSlot[1][str(item)] for item in predictSlot.data.tolist()[index][:lLensSeqin[index] - 1]])
-                pred_slots.append([dictSlot[1][str(item)] for item in batch[1][index][:lLensSeqin[index] - 1]])
+                pred_slots.append([dictSlot[1][str(item)] for item in predictSlot.data.tolist()[index][:lLensSeqin[index] - 1]])
+                correct_slots.append([dictSlot[1][str(item)] for item in batch[1][index][:lLensSeqin[index] - 1]])
 
                 # ''' 意图正确率计算 '''
                 # if batch[2][index] == predictLabel.data.tolist()[index]:
@@ -155,6 +155,6 @@ model.eval()
 
 print(WORDSIZE, SLOTSIZE, INTENTSIZE)
 
-print(evaluateLoss(model, dicts, validDir))      # (0.302971917404128, 0.1861887446471623)
-print(evaluateAccuracy(model, dicts, validDir))  # (0.9540873460246361, 0.966896114981263)
+print(evaluateLoss(model, dicts, validDir))      # (0.1551565093395766, 0.08468043408356607)
+print(evaluateAccuracy(model, dicts, validDir))  # (0.972, 0.95121239)
 

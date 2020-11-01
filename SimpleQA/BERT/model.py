@@ -144,9 +144,9 @@ class Seq2Seq(nn.Module):
         Attn, outputs = self.encoder(BERTSeqIn, DataSeqIn, lLensSeqin)
         ''' 获取实际模型的输出与计算对应的长度mask矩阵 '''
         inputIntent   = outputs[:, -1, :] + Attn[0][:, -1, :]
-        inputSlot     = outputs + Attn[1]
+        inputSlot     = outputs + Attn[2]
         intent_d      = Attn[0][:, -1, :]
-        slot_d        = Attn[1]
+        slot_d        = Attn[2]
 
         intent = self.seq2Intent(inputIntent, intent_d)
         slots  = self.seq2Slots(inputSlot, slot_d, intent_d)

@@ -99,10 +99,10 @@ class DecoderSlot(nn.Module):
 class SlotCRF(nn.Module):
     def __init__(self, num_tags):
         super(SlotCRF, self).__init__()
-        self.CRF = CRF(num_tags=num_tags)
+        self.CRF = CRF(num_tags=num_tags, batch_first=True)
 
-    def forward(self, slots, tags):
-        return self.CRF(slots.transpose(0, 1), tags.transpose(0, 1))
+    def forward(self, slots, tags, mask):
+        return self.CRF(slots, tags, mask, "token_mean")
 
 class Seq2Intent(nn.Module):
     def __init__(self, dec_intent, attn_intent):
@@ -127,7 +127,7 @@ class Seq2Slots(nn.Module):
         self.weightS_in  = nn.Linear(hidden_size, hidden_size)
         self.weightS_out = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, inputSlot, outputs, intent_d, seqOut, mask):
+    def forward(self, inputSlot, outputs, intent_d, seqOut, maskSlot, maskCRF):
         # intent_d = Variable(intent_d, requires_grad=False)   # 设置slot的反向传播不影响intent的注意力层结果，
                                                             # 认为只是拿来使用的，不需要因为slot训练结果的优劣而去修正他，减少耦合性。
         intent_d    = torch.tanh(self.weightI_in(intent_d))
@@ -138,10 +138,10 @@ class Seq2Slots(nn.Module):
         outputs     = self.weightS_out(outputs)
         outputs     = torch.tanh(outputs)
 
-        slot_d      = self.attn_slot(inputSlot, outputs, mask)
+        slot_d      = self.attn_slot(inputSlot, outputs, maskSlot)
         slot        = self.decoder(outputs, slot_d, intent_d)
 
-        slot_crf    = self.crf(slot, seqOut)
+        slot_crf    = self.crf(slot, seqOut, maskCRF)
         return slot, slot_crf
 
 
@@ -160,13 +160,14 @@ class Seq2Seq(nn.Module):
 
     def forward(self, seqIn, seqOut, lLensSeqin=None):
         """ mask矩阵生成 """
-        mask            = torch.cat([Variable(torch.BoolTensor([0] * seqIn.size(1))) for _ in seqIn]).view(seqIn.size(0), -1)
-        if lLensSeqin != None:      # 如果实际长度列表不为空，则根据实际长度矩阵获取模型的实际输出和计算对应的mask矩阵
-            mask        = [Variable(torch.BoolTensor([0] * lensSeqin + [1] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
-            mask        = torch.cat(mask).view(seqIn.size(0), -1)
+        mask            = [Variable(torch.BoolTensor([0] * lensSeqin + [1] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
+        mask            = torch.cat(mask).view(seqIn.size(0), -1)
 
         maskIntent      = mask
         maskSlot        = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
+
+        maskIntent      = maskIntent.cuda() if torch.cuda.is_available() else maskIntent
+        maskSlot        = maskSlot.cuda() if torch.cuda.is_available() else maskSlot
 
         """ 进入模型 """
         outputs, _      = self.encoder(seqIn)
@@ -176,7 +177,7 @@ class Seq2Seq(nn.Module):
         inputSlot       = outputs
 
         intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
-        slots, crf_slot  = self.seq2Slots(inputSlot, outputs, intent_d, seqOut, maskSlot)
+        slots, crf_slot  = self.seq2Slots(inputSlot, outputs, intent_d, seqOut, maskSlot, maskIntent ^ torch.ones_like(maskIntent))
 
         return (intent, slots), crf_slot
 

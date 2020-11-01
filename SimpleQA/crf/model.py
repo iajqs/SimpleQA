@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
+from torchcrf import CRF
+
 class EncoderRNN(nn.Module):
     def __init__(self, input_size, emb_size, pading_idx, hidden_size, n_layers, dropout, bidirectional=True):
         super(EncoderRNN, self).__init__()
@@ -94,6 +96,13 @@ class DecoderSlot(nn.Module):
         slots = self.fn(output)             # W^S_hy
         return slots
 
+class SlotCRF(nn.Module):
+    def __init__(self, num_tags):
+        super(SlotCRF, self).__init__()
+        self.CRF = CRF(num_tags=num_tags)
+
+    def forward(self, slots, tags):
+        return self.CRF(slots.transpose(0, 1), tags.transpose(0, 1))
 
 class Seq2Intent(nn.Module):
     def __init__(self, dec_intent, attn_intent):
@@ -109,15 +118,16 @@ class Seq2Intent(nn.Module):
 
 
 class Seq2Slots(nn.Module):
-    def __init__(self, attn_slot, dec_slot, hidden_size):
+    def __init__(self, attn_slot, dec_slot, crf, hidden_size):
         super(Seq2Slots, self).__init__()
         self.attn_slot   = attn_slot
         self.decoder     = dec_slot
+        self.crf         = crf
         self.weightI_in  = nn.Linear(hidden_size, hidden_size)
         self.weightS_in  = nn.Linear(hidden_size, hidden_size)
         self.weightS_out = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, inputSlot, outputs, intent_d, mask):
+    def forward(self, inputSlot, outputs, intent_d, seqOut, mask):
         # intent_d = Variable(intent_d, requires_grad=False)   # 设置slot的反向传播不影响intent的注意力层结果，
                                                             # 认为只是拿来使用的，不需要因为slot训练结果的优劣而去修正他，减少耦合性。
         intent_d    = torch.tanh(self.weightI_in(intent_d))
@@ -130,7 +140,9 @@ class Seq2Slots(nn.Module):
 
         slot_d      = self.attn_slot(inputSlot, outputs, mask)
         slot        = self.decoder(outputs, slot_d, intent_d)
-        return slot
+
+        slot_crf    = self.crf(slot, seqOut)
+        return slot, slot_crf
 
 
 class Seq2Seq(nn.Module):
@@ -146,7 +158,7 @@ class Seq2Seq(nn.Module):
             inputIntent.append(o[lLensSeqin[i] - 1])
         return torch.cat(inputIntent).view(outputs.size(0), -1)
 
-    def forward(self, seqIn, lLensSeqin=None):
+    def forward(self, seqIn, seqOut, lLensSeqin=None):
         """ mask矩阵生成 """
         mask            = torch.cat([Variable(torch.BoolTensor([0] * seqIn.size(1))) for _ in seqIn]).view(seqIn.size(0), -1)
         if lLensSeqin != None:      # 如果实际长度列表不为空，则根据实际长度矩阵获取模型的实际输出和计算对应的mask矩阵
@@ -164,7 +176,7 @@ class Seq2Seq(nn.Module):
         inputSlot       = outputs
 
         intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
-        slots            = self.seq2Slots(inputSlot, outputs, intent_d, maskSlot)
+        slots, crf_slot  = self.seq2Slots(inputSlot, outputs, intent_d, seqOut, maskSlot)
 
-        return (intent, slots)
+        return (intent, slots), crf_slot
 

@@ -1,6 +1,6 @@
 import sys
 if sys.platform == "win32":
-    from SimpleQA.Base_Seq2SeqAttention.const import *
+    from SimpleQA.crf.const import *
 else:
     from .const import *
 

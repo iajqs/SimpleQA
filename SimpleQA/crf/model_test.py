@@ -2,11 +2,11 @@ import sys
 import numpy as np
 
 if sys.platform == "win32":
-    from SimpleQA.Base_Seq2SeqAttention.ouptutUtil import *
-    from SimpleQA.Base_Seq2SeqAttention.const import *
-    from SimpleQA.Base_Seq2SeqAttention.train import *
-    from SimpleQA.Base_Seq2SeqAttention.model import *
-    from SimpleQA.Base_Seq2SeqAttention.utils import *
+    from SimpleQA.crf.ouptutUtil import *
+    from SimpleQA.crf.const import *
+    from SimpleQA.crf.train import *
+    from SimpleQA.crf.model import *
+    from SimpleQA.crf.utils import *
 else:
     from .ouptutUtil import *
     from .const import *

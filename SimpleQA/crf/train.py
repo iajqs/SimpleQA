@@ -1,10 +1,10 @@
 import sys
 print(sys.platform)
 if sys.platform == "win32":
-    from SimpleQA.Base_Seq2SeqAttention.model import *
-    from SimpleQA.Base_Seq2SeqAttention.const import *
-    from SimpleQA.Base_Seq2SeqAttention.dataUtil import *
-    from SimpleQA.Base_Seq2SeqAttention.ouptutUtil import *
+    from SimpleQA.crf.model import *
+    from SimpleQA.crf.const import *
+    from SimpleQA.crf.dataUtil import *
+    from SimpleQA.crf.ouptutUtil import *
 else:
     from .model import *
     from .const import *
@@ -38,8 +38,10 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     decoderIntent = DecoderIntent(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, intent_size=INTENTSIZE)
     decoderSlot   = DecoderSlot(hidden_size=LSTMHIDSIZE * MULTI_HIDDEN, slot_size=SLOTSIZE)
 
+    crf           = SlotCRF(num_tags=SLOTSIZE)
+
     seq2Intent    = Seq2Intent(dec_intent=decoderIntent, attn_intent=attnIntent)
-    seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
+    seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot, crf=crf, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
 
     model         = Seq2Seq(encoder=encoder, seq2Intent=seq2Intent, seq2Slots=seq2Slots)
 
@@ -97,7 +99,7 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
 
         optimizer.zero_grad()
 
-        outputs      = model(BatchSeqIn, lLensSeqin)
+        outputs, slot_crf = model(seqIn=BatchSeqIn, seqOut=BatchSeqOut, lLensSeqin=lLensSeqin)
         outputIntent = outputs[0]
         outputSlots  = outputs[1]
 
@@ -110,6 +112,7 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
         loss = lossIntent * 0
         loss = loss + lossIntent if isTrainIntent == True else loss
         loss = loss + lossSlot if isTrainSlot == True else loss
+        loss = loss - slot_crf
         loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), CLIP)

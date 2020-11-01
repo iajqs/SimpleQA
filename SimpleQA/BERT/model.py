@@ -3,15 +3,31 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 class EncoderRNN(nn.Module):
-    def __init__(self, BERTModel):
+    def __init__(self, BERTModel, input_size, emb_size, pading_idx, hidden_size, n_layers, dropout, bidirectional=True):
         super(EncoderRNN, self).__init__()
+        self.input_size  = input_size
+        self.emb_size    = emb_size
+        self.pading_idx  = pading_idx
+        self.hidden_size = hidden_size
+        self.n_layers    = n_layers
+
+        self.embedding   = nn.Embedding(input_size, emb_size, padding_idx=pading_idx)
+        self.lstm        = nn.LSTM(input_size=emb_size,
+                                   hidden_size=hidden_size,
+                                   bidirectional=bidirectional,
+                                   batch_first=True)
+        self.dropout     = nn.Dropout(dropout)
         self.BERTModel  = BERTModel
 
+    def forward(self, BERTSeqIn, DataSeqIn, lLensSeqin):
+        token_type_ids    = [Variable(torch.LongTensor([0] * lensSeqin + [1] * (BERTSeqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
+        token_type_ids    = torch.cat(token_type_ids).view(BERTSeqIn.size(0), -1)
+        token_type_ids    = token_type_ids.cuda() if torch.cuda.is_available() else token_type_ids
 
-    def forward(self, seqIn):
-        # self.BERTModel.eval()
-        outputs, _ = self.BERTModel(seqIn, output_all_encoded_layers=False)
-        return outputs
+        BERTOutputs, _ = self.BERTModel(BERTSeqIn, token_type_ids=token_type_ids, attention_mask=None, output_all_encoded_layers=True)
+        embedded = self.dropout(self.embedding(DataSeqIn))
+        outputs, (hidden, cell) = self.lstm(embedded)
+        return BERTOutputs, outputs
 
 
 class AttnIntent(nn.Module):
@@ -38,7 +54,6 @@ class AttnIntent(nn.Module):
 class AttnSlot(nn.Module):
     def __init__(self):
         super(AttnSlot, self).__init__()
-        # self.weightS_he  = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, hidden, outputs, mask):
         hidden        = hidden.transpose(1, 2)
@@ -73,7 +88,7 @@ class DecoderSlot(nn.Module):
         self.W  = nn.Linear(hidden_size, hidden_size)
         self.fn = nn.Linear(hidden_size, slot_size)
 
-    def forward(self, hidden, slot_d, intent_d):
+    def forward(self, hidden, slot_d=None, intent_d=None):
         intent_d = intent_d.view(intent_d.size(0), 1, intent_d.size(1))
         # g = sigma(v·tanh(C^S_i + W·C^I))
         slot_gate = self.V(torch.tanh(slot_d + self.W(intent_d)))
@@ -85,40 +100,29 @@ class DecoderSlot(nn.Module):
 
 
 class Seq2Intent(nn.Module):
-    def __init__(self, dec_intent, attn_intent):
+    def __init__(self, dec_intent, attn_intent, EncoderHidSize, IntentHidSize):
         super(Seq2Intent, self).__init__()
         self.decoder     = dec_intent
         self.attn_intent = attn_intent
+        self.fn          = nn.Linear(EncoderHidSize, IntentHidSize)
 
-    def forward(self, inputIntent, outputs, mask):
-        intent_d    = self.attn_intent(inputIntent, outputs, mask)
-        intent      = self.decoder(inputIntent, intent_d)
-
-        return intent, intent_d
+    def forward(self, inputIntent, intent_d):
+        # intent_d = torch.tanh(self.fn(intent_d))
+        intent = self.decoder(inputIntent, intent_d)
+        return intent
 
 
 class Seq2Slots(nn.Module):
-    def __init__(self, attn_slot, dec_slot, hidden_size):
+    def __init__(self, attn_slot, dec_slot, IntentHidSize, hidden_size):
         super(Seq2Slots, self).__init__()
         self.attn_slot   = attn_slot
         self.decoder     = dec_slot
-        self.weightI_in  = nn.Linear(hidden_size, hidden_size)
+        self.weightI_in  = nn.Linear(IntentHidSize, hidden_size)
         self.weightS_in  = nn.Linear(hidden_size, hidden_size)
-        self.weightS_out = nn.Linear(hidden_size, hidden_size)
+        # self.weightS_out = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, inputSlot, outputs, intent_d, mask):
-        # intent_d = Variable(intent_d, requires_grad=False)   # 设置slot的反向传播不影响intent的注意力层结果，
-                                                            # 认为只是拿来使用的，不需要因为slot训练结果的优劣而去修正他，减少耦合性。
-        intent_d    = torch.tanh(self.weightI_in(intent_d))
-
-        inputSlot   = self.weightS_in(inputSlot)  # W^S_he * h_k
-        inputSlot   = torch.tanh(inputSlot)    # sigmoid(W^S_he * h_k)
-
-        outputs     = self.weightS_out(outputs)
-        outputs     = torch.tanh(outputs)
-
-        slot_d      = self.attn_slot(inputSlot, outputs, mask)
-        slot        = self.decoder(outputs, slot_d, intent_d)
+    def forward(self, inputSlot, outputs, intent_d):
+        slot = self.decoder(inputSlot, outputs, intent_d)
         return slot
 
 
@@ -135,24 +139,17 @@ class Seq2Seq(nn.Module):
             inputIntent.append(o[lLensSeqin[i] - 1])
         return torch.cat(inputIntent).view(outputs.size(0), -1)
 
-    def forward(self, seqIn, lLensSeqin=None):
-        """ mask矩阵生成 """
-        mask            = torch.cat([Variable(torch.BoolTensor([0] * seqIn.size(1))) for _ in seqIn]).view(seqIn.size(0), -1)
-        if lLensSeqin != None:      # 如果实际长度列表不为空，则根据实际长度矩阵获取模型的实际输出和计算对应的mask矩阵
-            mask        = [Variable(torch.BoolTensor([0] * lensSeqin + [1] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
-            mask        = torch.cat(mask).view(seqIn.size(0), -1)
-
-        maskIntent      = mask
-        maskSlot        = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
-
+    def forward(self, BERTSeqIn, DataSeqIn, lLensSeqin=None):
         """ 进入模型 """
-        outputs         = self.encoder(seqIn)
+        Attn, outputs = self.encoder(BERTSeqIn, DataSeqIn, lLensSeqin)
         ''' 获取实际模型的输出与计算对应的长度mask矩阵 '''
-        inputIntent     = outputs[:, -1, :]
-        inputSlot       = outputs
+        inputIntent   = outputs[:, -1, :] + Attn[0][:, -1, :]
+        inputSlot     = outputs + Attn[1]
+        intent_d      = Attn[0][:, -1, :]
+        slot_d        = Attn[1]
 
-        intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
-        slots            = self.seq2Slots(inputSlot, outputs, intent_d, maskSlot)
+        intent = self.seq2Intent(inputIntent, intent_d)
+        slots  = self.seq2Slots(inputSlot, slot_d, intent_d)
 
         return (intent, slots)
 

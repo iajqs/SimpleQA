@@ -196,15 +196,5 @@ if __name__ == '__main__':
         if validLoss[2] < lossMin:
             lossMin = validLoss[2]
             modelBest = model
-            save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
-            # print("update", end='\t')
+            save_model(modelBest, dicts, modelDir + "/crf", "crf.model", "crf.json")
             test()
-        if trainLoss[0] + trainLoss[1] < 0.1:
-            for p in optimizer.param_groups:
-                p['lr'] *= 0.9
-        elif trainLoss[0] + trainLoss[1] < 0.2:
-            LEARNINGRATE = 1e-3
-            for p in optimizer.param_groups:
-                p['lr'] = 1e-3
-
-        print()

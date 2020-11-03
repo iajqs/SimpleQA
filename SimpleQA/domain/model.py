@@ -92,8 +92,8 @@ class DecoderDomain(nn.Module):
 
     def forward(self, hidden, attn_hidden):
         output = hidden + attn_hidden
-        intent = self.fn(output)
-        return intent
+        domain = self.fn(output)
+        return domain
 
 class DecoderIntent(nn.Module):
     def __init__(self, hidden_size, intent_size):

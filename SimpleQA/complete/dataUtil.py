@@ -41,6 +41,20 @@ def getData(dataDir):
     dataDomain = [dictATIS.get(label, label) for label in dataLabel]
     return dataSeqIn, dataSeqOut, dataLabel, dataDomain
 
+
+""" 数据预处理 """
+def normalizeString(s):
+    """
+    去掉非目标语言字符（保留特定标点符号）
+    :param s:
+    :return:
+    """
+    s = re.sub(r"([.!?])", r"", s)
+    s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r"", s)
+    s = ' '.join(re.sub(r"[0-9]+", WNUM, item) if re.fullmatch(r"[0-9]+", item) else item for item in s.split(' ') )
+    return s
+
+
 """ 获取词典 """
 def getBERTWordDictionary(tokenizer):
     """
@@ -129,16 +143,6 @@ def getDomainDictionary(dataDomain):
     dictDomain   = (domain2index, index2domain)
     return dictDomain
 
-""" 数据预处理 """
-def normalizeString(s):
-    """
-    去掉非目标语言字符（保留特定标点符号）
-    :param s:
-    :return:
-    """
-    s = re.sub(r"([.!?])", r"", s)
-    s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r"", s)
-    return s
 
 def makePairs(dataSeqIn, dataSeqOut, dataLabel, dataDomain):
     """

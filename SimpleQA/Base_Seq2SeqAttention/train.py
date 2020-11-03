@@ -5,11 +5,13 @@ if sys.platform == "win32":
     from SimpleQA.Base_Seq2SeqAttention.const import *
     from SimpleQA.Base_Seq2SeqAttention.dataUtil import *
     from SimpleQA.Base_Seq2SeqAttention.ouptutUtil import *
+    from SimpleQA.Base_Seq2SeqAttention.model_test import *
 else:
     from .model import *
     from .const import *
     from .dataUtil import *
     from .ouptutUtil import *
+    from .model_test import *
 
 import torch
 import torch.nn as nn
@@ -42,7 +44,7 @@ def initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=True):
     seq2Slots     = Seq2Slots(dec_slot=decoderSlot, attn_slot=attnSlot, hidden_size=LSTMHIDSIZE * MULTI_HIDDEN)
 
     model         = Seq2Seq(encoder=encoder, seq2Intent=seq2Intent, seq2Slots=seq2Slots)
-
+    model         = model.cuda() if torch.cuda.is_available() else model
     if isTrain:
         model.apply(init_weights)
     return model
@@ -88,7 +90,7 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
 
     for epoch, batch in tqdm.tqdm(enumerate(trainIterator)):
         MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-        lLensSeqin  = getValidLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
+        lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
         batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)   # 按照一个batch一个batch的进行pad
         BatchSeqIn  = batch[0]          # 文本序列
         BatchSeqOut = batch[1]          # 词槽标签序列
@@ -118,8 +120,8 @@ def train(iter, model=None, optimizer=None, isTrainSlot=True, isTrainIntent=True
         epoch_lossIntent += lossIntent.item()
         epoch_lossSlot  += lossSlot.item()
 
-        import time
-        time.sleep(0.4)
+        # import time
+        # time.sleep(0.4)
         # print("iter=%d, epoch=%d / %d: MAXLEN = %d; trainLoss = %f、 intentLoss = %f、 slotLoss = %f " % (iter, epoch, len(trainIterator), MAXLEN, loss.item(), lossIntent, lossSlot))
 
     return (epoch_lossIntent / len(trainIterator), epoch_lossSlot / len(trainIterator)),  model, optimizer, (dictWord, dictSlot, dictIntent)
@@ -151,7 +153,7 @@ def evaluate(model, dicts):
     with torch.no_grad():
         for i, batch in enumerate(validIterator):
             MAXLEN      = getMaxLengthFromBatch(batch, ADDLENGTH)
-            lLensSeqin  = getValidLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
+            lLensSeqin  = getSeqInLengthsFromBatch(batch, ADDLENGTH, MAXLEN=MAXLEN)
             batch       = padBatch(batch, ADDLENGTH, MAXLEN_TEMP=MAXLEN)  # 按照一个batch一个batch的进行pad
             BatchSeqIn  = batch[0]  # 文本序列
             BatchSeqOut = batch[1]  # 词槽标签序列
@@ -189,6 +191,7 @@ if __name__ == '__main__':
             lossMin = validLoss[0] + validLoss[1]
             modelBest = model
             save_model(modelBest, dicts, modelDir + "/base", "base.model", "base.json")
+            test()
         if trainLoss[0] + trainLoss[1] < 0.1:
             for p in optimizer.param_groups:
                 p['lr'] *= 0.9

@@ -142,19 +142,19 @@ def evaluateAccuracy(model, dicts, dataDir):
     return ("acc_intent:", accuracy, "slot, precision=%f, recall=%f, f1=%f" % (precision, recall, f1), "semantic error(intent, slots are all correct): %f", semantic_error)
 
 
+def test():
+    modelLoaded, dicts = load_model(modelDir + "/base", "base.model", "base.json")
 
-modelLoaded, dicts = load_model(modelDir + "/base", "base.model", "base.json")
+    WORDSIZE    = len(dicts[0][0])
+    SLOTSIZE    = len(dicts[1][0])
+    INTENTSIZE  = len(dicts[2][0])
 
-WORDSIZE    = len(dicts[0][0])
-SLOTSIZE    = len(dicts[1][0])
-INTENTSIZE  = len(dicts[2][0])
+    model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=False)
+    model.load_state_dict(modelLoaded)
+    model.eval()
 
-model = initModel(WORDSIZE, SLOTSIZE, INTENTSIZE, isTrain=False)
-model.load_state_dict(modelLoaded)
-model.eval()
+    # print(WORDSIZE, SLOTSIZE, INTENTSIZE)
 
-print(WORDSIZE, SLOTSIZE, INTENTSIZE)
-
-print(evaluateLoss(model, dicts, validDir))      # (0.1551565093395766, 0.08468043408356607)
-print(evaluateAccuracy(model, dicts, validDir))  # (0.972, 0.95121239)
+    print(evaluateLoss(model, dicts, testDir))      # (0.1551565093395766, 0.08468043408356607)
+    print(evaluateAccuracy(model, dicts, testDir))  # (0.972, 0.95121239)
 

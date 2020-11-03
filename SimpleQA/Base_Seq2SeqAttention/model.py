@@ -156,6 +156,9 @@ class Seq2Seq(nn.Module):
         maskIntent      = mask
         maskSlot        = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
 
+        maskIntent      = maskIntent.cuda() if torch.cuda.is_available() else maskIntent
+        maskSlot        = maskSlot.cuda() if torch.cuda.is_available() else maskSlot
+
         """ 进入模型 """
         outputs, _      = self.encoder(seqIn)
 

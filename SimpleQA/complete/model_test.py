@@ -132,7 +132,6 @@ def evaluateAccuracy(model, dicts, dataDir):
                 pred_intents.append(predictLabel.data.tolist()[index])
                 pred_slots.append([dictSlot[1][str(item)] for item in predictSlot[index][:lLensSeqin[index] - 1]])
 
-
     correct_intents = np.array(correct_intents)
     correct_domains = np.array(correct_domains)
     pred_intents    = np.array(pred_intents)
@@ -161,3 +160,6 @@ def test():
 
     print(evaluateLoss(model, dicts, testDir))      # (0.302971917404128, 0.1861887446471623)
     print(evaluateAccuracy(model, dicts, testDir))  # (0.9540873460246361, 0.966896114981263)
+
+if __name__ == '__main__':
+    test()

@@ -70,7 +70,7 @@ def evaluateLoss(model, dicts, dataDir):
 
 def evaluateAccuracy(model, dicts, dataDir):
     ''' 读取数据 '''
-    dataSeqIn, dataSeqOut, dataLabel = getData(dataDir)     # 获取原数据
+    dataSeqIn, dataSeqOut, dataLabel = getData(dataDir)       # 获取原数据
     dictWord  = dicts[0]                                    # 获取词典  (word2index, index2word)
     dictSlot  = dicts[1]                                    # 获取词槽标签字典  (slot2index, index2slot)
     dictLabel = dicts[2]                                    # 获取意图标签字典  (label2index, index2label)
@@ -122,7 +122,7 @@ def evaluateAccuracy(model, dicts, dataDir):
 
 
 def test():
-    modelLoaded, dicts = load_model(modelDir + "/base", "base.model", "base.json")
+    modelLoaded, dicts = load_model(modelDir + "/crf", "crf.model", "crf.json")
 
     WORDSIZE    = len(dicts[0][0])
     SLOTSIZE    = len(dicts[1][0])

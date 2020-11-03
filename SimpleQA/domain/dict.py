@@ -17,11 +17,10 @@ dictATIS = {
     "atis_cheapest"     : "atis_fare",
     "atis_airfare"      : "atis_fare",
 
-
-    "atis_meal"         : "atis_meal",
-    "atis_abbreviation" : "atis_abbreviation",
-    "atis_restriction"  : "atis_restriction",
-
     "atis_ground_service": "atis_ground",
     "atis_gournd_fare"   : "atis_ground",
+
+    "atis_meal"        : "atis_others",
+    "atis_abbreviation": "atis_others",
+    "atis_restriction" : "atis_others",
 }

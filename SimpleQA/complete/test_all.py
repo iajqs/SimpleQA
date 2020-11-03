@@ -36,7 +36,7 @@ class TestDataUtil:
 
     def test_getWordDictionary(self):
         dataSeqIn = [['i', 'want', 'to', 'fly', 'from', 'baltimore', 'to', 'dallas', 'round', 'trip']]
-        dictWord = getWordDictionary(dataSeqIn)
+        dictWord = getBERTWordDictionary(dataSeqIn)
         print(dictWord[0])
         print(dictWord[1])
 
@@ -58,7 +58,7 @@ class TestDataUtil:
             assert item == dictIntent[1][idx]
 
     def test_normalizeString(self):
-        s1 = "flights! from cincinnati to o'hare departing after 718 am american?"
+        s1 = "flights! from cincinnati to o'hare departing after 718 am american? 1aa"
         s2 = "O O O O O B-fromloc.city_name O B-depart_time.time I-depart_time.time O O O B-toloc.city_name O B-arrive_time.time O O B-arrive_time.period_of_day"
         print()
         print(s1)
@@ -88,7 +88,7 @@ class TestDataUtil:
     def test_transIds(self):
         ''' 读取数据 '''
         dataSeqIn, dataSeqOut, dataIntent = getData(trainDir)   # 获取原数据
-        dictWord   = getWordDictionary(dataSeqIn)               # 获取词典  (word2index, index2word)
+        dictWord   = getBERTWordDictionary(dataSeqIn)               # 获取词典  (word2index, index2word)
         dictSlot   = getSlotDictionary(dataSeqOut)              # 获取词槽标签字典  (slot2index, index2slot)
         dictIntent = getIntentDictionary(dataIntent)            # 获取意图标签字典  (intent2index, index2intent)
         pairs      = makePairs(dataSeqIn, dataSeqOut, dataIntent)                   # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataIntent)
@@ -116,7 +116,7 @@ class TestDataUtil:
     def test_splitData(self):
         print()
         dataSeqIn, dataSeqOut, dataIntent = getData(trainDir)  # 获取原数据
-        dictWord    = getWordDictionary(dataSeqIn)  # 获取词典  (word2index, index2word)
+        dictWord    = getBERTWordDictionary(dataSeqIn)  # 获取词典  (word2index, index2word)
         dictSlot    = getSlotDictionary(dataSeqOut)  # 获取词槽标签字典  (slot2index, index2slot)
         dictIntent  = getIntentDictionary(dataIntent)  # 获取意图标签字典  (intent2index, index2intent)
         pairs       = makePairs(dataSeqIn, dataSeqOut, dataIntent)  # 根据原数据生成样例对    zip(dataSeqIn, dataSeqOut, dataIntent)

@@ -24,6 +24,26 @@ class EncoderRNN(nn.Module):
         outputs, (hidden, cell) = self.lstm(embedded)
         return outputs, hidden
 
+class AttnDomain(nn.Module):
+    def __init__(self):
+        super(AttnDomain, self).__init__()
+
+    def forward(self, hidden, outputs, mask=None):
+        hidden = hidden.squeeze(1).unsqueeze(2)
+
+        batch_size    = outputs.size(0)
+        max_len       = outputs.size(1)
+
+        energies      = outputs.contiguous().view(batch_size, max_len, -1)
+        attn_energies = energies.bmm(hidden).transpose(1, 2)
+        attn_energies = attn_energies.squeeze(1).masked_fill(mask, -1e12)
+
+        alpha         = torch.softmax(attn_energies, dim=-1)
+        alpha         = alpha.unsqueeze(1)
+        context       = alpha.bmm(outputs)
+        context       = context.squeeze(1)
+        return context
+
 
 class AttnIntent(nn.Module):
     def __init__(self):
@@ -65,15 +85,28 @@ class AttnSlot(nn.Module):
         context       = alpha.bmm(outputs)
         return context
 
-
-class DecoderIntent(nn.Module):
-    def __init__(self, hidden_size, intent_size):
-        super(DecoderIntent, self).__init__()
-        self.fn = nn.Linear(hidden_size, intent_size)
+class DecoderDomain(nn.Module):
+    def __init__(self, hidden_size, domain_size):
+        super(DecoderDomain, self).__init__()
+        self.fn = nn.Linear(hidden_size, domain_size)
 
     def forward(self, hidden, attn_hidden):
         output = hidden + attn_hidden
         intent = self.fn(output)
+        return intent
+
+class DecoderIntent(nn.Module):
+    def __init__(self, hidden_size, intent_size):
+        super(DecoderIntent, self).__init__()
+        self.V  = nn.Linear(hidden_size, hidden_size)
+        self.W  = nn.Linear(hidden_size, hidden_size)
+        self.fn = nn.Linear(hidden_size, intent_size)
+
+    def forward(self, hidden, intent_d, domain_d):
+        intent_gate = self.V(torch.tanh(intent_d + self.W(domain_d)))
+        intent_gate = intent_d * intent_gate      # C^S_i·g
+        output = hidden + intent_gate         # h_i + ..
+        intent = self.fn(output)             # W^S_hy
         return intent
 
 
@@ -94,16 +127,29 @@ class DecoderSlot(nn.Module):
         slots = self.fn(output)             # W^S_hy
         return slots
 
+class Seq2Domain(nn.Module):
+    def __init__(self, dec_domain, attn_domain):
+        super(Seq2Domain, self).__init__()
+        self.decoder     = dec_domain
+        self.attn_domain = attn_domain
+
+    def forward(self, inputDomain, outputs, mask):
+        domain_d    = self.attn_domain(inputDomain, outputs, mask)
+        domain      = self.decoder(inputDomain, domain_d)
+
+        return domain, domain_d
 
 class Seq2Intent(nn.Module):
-    def __init__(self, dec_intent, attn_intent):
+    def __init__(self, dec_intent, attn_intent, hidden_size):
         super(Seq2Intent, self).__init__()
         self.decoder     = dec_intent
         self.attn_intent = attn_intent
+        self.weightI_in = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, inputIntent, outputs, mask):
+    def forward(self, inputIntent, outputs, domain_d, mask):
+        domain_d = torch.tanh(self.weightI_in(domain_d))
         intent_d    = self.attn_intent(inputIntent, outputs, mask)
-        intent      = self.decoder(inputIntent, intent_d)
+        intent      = self.decoder(inputIntent, intent_d, domain_d)
 
         return intent, intent_d
 
@@ -134,11 +180,12 @@ class Seq2Slots(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, encoder, seq2Intent, seq2Slots):
+    def __init__(self, encoder, seq2Intent, seq2Slots, seq2Domain):
         super(Seq2Seq, self).__init__()
         self.encoder     = encoder
         self.seq2Intent  = seq2Intent
         self.seq2Slots   = seq2Slots
+        self.seq2Domain  = seq2Domain
 
     def getUsefulOutputForIntent(self, outputs, lLensSeqin):
         inputIntent = []
@@ -153,18 +200,25 @@ class Seq2Seq(nn.Module):
             mask        = [Variable(torch.BoolTensor([0] * lensSeqin + [1] * (seqIn.size(1) - lensSeqin))) for lensSeqin in lLensSeqin]
             mask        = torch.cat(mask).view(seqIn.size(0), -1)
 
+        maskDomain      = mask
         maskIntent      = mask
         maskSlot        = mask.view(mask.size(0), 1, mask.size(1)).expand(mask.size(0),mask.size(1), mask.size(1))
+
+        maskDomain      = maskDomain.cuda() if torch.cuda.is_available() else maskDomain
+        maskIntent      = maskIntent.cuda() if torch.cuda.is_available() else maskIntent
+        maskSlot        = maskSlot.cuda() if torch.cuda.is_available() else maskSlot
 
         """ 进入模型 """
         outputs, _      = self.encoder(seqIn)
 
         ''' 获取实际模型的输出与计算对应的长度mask矩阵 '''
+        inputDomain     = outputs[:, -1, :]
         inputIntent     = outputs[:, -1, :]
         inputSlot       = outputs
 
-        intent, intent_d = self.seq2Intent(inputIntent, outputs, maskIntent)
+        domain, domain_d = self.seq2Domain(inputDomain, outputs, maskDomain)
+        intent, intent_d = self.seq2Intent(inputIntent, outputs, domain_d, maskIntent)
         slots            = self.seq2Slots(inputSlot, outputs, intent_d, maskSlot)
 
-        return (intent, slots)
+        return (domain, intent, slots)
 

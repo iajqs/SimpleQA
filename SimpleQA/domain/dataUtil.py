@@ -1,9 +1,10 @@
 import sys
 if sys.platform == "win32":
-    from SimpleQA.Base_Seq2SeqAttention.const import *
+    from SimpleQA.domain.const import *
+    from SimpleQA.domain.dict import *
 else:
     from .const import *
-
+    from .dict import *
 import re
 import random
 import torch
@@ -20,9 +21,10 @@ def getData(dataDir):
     pathSeqOut = dataDir + "/seq.out"         # 输出序列文件路径
     pathLabel  = dataDir + "/label"           # 输出意图文件路径
 
-    dataSeqIn  = []      # 输入序列数据
-    dataSeqOut = []      # 输出序列数据
-    dataLabel  = []      # 意图标签数据
+    dataSeqIn  = []     # 输入序列数据
+    dataSeqOut = []     # 输出序列数据
+    dataLabel  = []     # 意图标签数据
+    dataDomain = []     # 领域标签数据
 
     '''seq.in'''
     with open(pathSeqIn, 'r', encoding='utf-8') as fr:
@@ -33,8 +35,10 @@ def getData(dataDir):
     '''label'''
     with open(pathLabel, 'r', encoding='utf-8') as fr:
         dataLabel = [line.strip() for line in fr.readlines()]
+    '''domain'''
+    dataDomain = [dictATIS.get(label, DUNK_SIGN) for label in dataLabel]
 
-    return dataSeqIn, dataSeqOut, dataLabel
+    return dataSeqIn, dataSeqOut, dataLabel, dataDomain
 
 """ 获取词典 """
 def getWordDictionary(dataSeqin):
@@ -86,7 +90,18 @@ def getIntentDictionary(dataLabel):
     dictIntent   = (intent2index, index2intent)
     return dictIntent
 
-
+def getDomainDictionary(dataDomain):
+    """
+    根据领域标签数据获取领域字典
+    :param dataLabel:
+    :return:
+    """
+    setDomain    = {domain for domain in dataDomain}
+    domain2index = {domain: index + COUNTDSIGN for index, domain in enumerate(setDomain)}
+    domain2index["<UNK_DOMAIN>"] = DUNK_SIGN
+    index2domain = {domain2index[intent]: intent for intent in domain2index.keys()}
+    dictDomain   = (domain2index, index2domain)
+    return dictDomain
 
 """ 数据预处理 """
 def normalizeString(s):
@@ -99,7 +114,7 @@ def normalizeString(s):
     s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r" ", s)
     return s
 
-def makePairs(dataSeqIn, dataSeqOut, dataLabel):
+def makePairs(dataSeqIn, dataSeqOut, dataLabel, dataDomain):
     """
     根据读取的数据生成样例对
     :param dataSeqIn: 输入序列
@@ -114,14 +129,15 @@ def makePairs(dataSeqIn, dataSeqOut, dataLabel):
         itemSeqIn  = dataSeqIn[index]
         itemSeqOut = dataSeqOut[index]
         itemLabel  = dataLabel[index]
+        itemDomain = dataDomain[index]
 
         assert len(itemSeqIn) == len(itemSeqOut)
-        pairs.append([itemSeqIn, itemSeqOut, itemLabel])
+        pairs.append([itemSeqIn, itemSeqOut, itemLabel, itemDomain])
 
     return pairs
 
 
-def transIds(pairs, word2index, slot2index, intent2index):
+def transIds(pairs, word2index, slot2index, intent2index, domain2index):
     """
     将字词数据都转换为整数id
     :param pairs:
@@ -135,37 +151,16 @@ def transIds(pairs, word2index, slot2index, intent2index):
         itemSeqIn  = pair[0]
         itemSeqOut = pair[1]
         itemIntent = pair[2]
+        itemDomain = pair[3]
 
         itemSeqInIded  = [word2index.get(word, WUNK_SIGN) for word in itemSeqIn]    # words to ids
         itemSeqOutIded = [slot2index.get(slot, SUNK_SIGN) for slot in itemSeqOut]   # slots to ids
-        itemIntentIded  = intent2index.get(itemIntent, 0)                      # labels to ids
-
+        itemIntentIded = intent2index.get(itemIntent, IUNK_SIGN)                      # labels to ids
+        itemDomainIded = domain2index.get(itemDomain, DUNK_SIGN)  # labels to ids
         assert len(itemSeqInIded) == len(itemSeqOutIded)
-        pairsIded.append([itemSeqInIded, itemSeqOutIded, itemIntentIded])
+        pairsIded.append([itemSeqInIded, itemSeqOutIded, itemIntentIded, itemDomainIded])
 
     return pairsIded
-
-
-def pad(pairsIded):
-    """
-    根据序列最大长度对数据进行裁剪和pading操作
-    :param pairsIded: 样例对
-    :return:
-    """
-    pairsIdedPaded = []
-
-    for pair in pairsIded:
-        itemSeqIn  = pair[0]
-        itemSeqOut = pair[1]
-        itemIntent = pair[2]
-
-        itemSeqIn  = (itemSeqIn + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN)[:MAXLEN] if len(itemSeqIn) < MAXLEN else itemSeqIn[:MAXLEN - 1] + [WEOS_SIGN]
-        itemSeqOut = (itemSeqOut + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN)[:MAXLEN] if len(itemSeqIn) < MAXLEN else itemSeqOut[:MAXLEN - 1] + [SPAD_SIGN]
-
-        pairsIdedPaded.append([itemSeqIn, itemSeqOut, itemIntent])
-
-    return pairsIdedPaded
-
 
 def splitData(pairs, batchSize=BATCHSIZE):
     """
@@ -178,7 +173,8 @@ def splitData(pairs, batchSize=BATCHSIZE):
     for start in range(0, len(pairs), batchSize):
         trainIterator.append([[item[0] for item in pairs[start:start + batchSize]],
                               [item[1] for item in pairs[start:start + batchSize]],
-                              [item[2] for item in pairs[start:start + batchSize]]])
+                              [item[2] for item in pairs[start:start + batchSize]],
+                              [item[3] for item in pairs[start:start + batchSize]]])
     return trainIterator
 
 def getMaxLengthFromBatch(batch, addLength):
@@ -208,13 +204,13 @@ def padBatch(batch, addLength, MAXLEN_TEMP=MAXLEN):
 
     batchSeqIn     = [(batch[0][index] + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[0]))]
     batchSeqOut    = [(batch[1][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[1]))]
-    trainIterator = [batchSeqIn, batchSeqOut, batch[2]]
+    trainIterator = [batchSeqIn, batchSeqOut, batch[2], batch[3]]
 
     return trainIterator
 
-def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel):
-    BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")
-    BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
-    BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
-
-    return BatchSeqIn, BatchSeqOut, BatchLabel
+def vector2Tensor(BatchSeqIn, BatchSeqOut, BatchLabel, BatchDomain):
+    BatchSeqIn  = torch.tensor(BatchSeqIn, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqIn, dtype=torch.long, device="cpu")
+    BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
+    BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
+    BatchDomain = torch.tensor(BatchDomain, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchDomain, dtype=torch.long, device="cpu")
+    return BatchSeqIn, BatchSeqOut, BatchLabel, BatchDomain

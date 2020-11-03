@@ -17,13 +17,14 @@ else:
 COUNTWSIGN    =    3         # 词典特殊字符的数量
 COUNTSSIGN    =    2         # 词槽特殊字符的数量        // SONLY_SIGN 不计入
 COUNTISIGN    =    1         # 意图特殊字符的数量
+COUNTDSIGN    =    1         # 领域特殊字符的数量
 WUNK_SIGN     =    0         # 未知词在词典的标号
 WPAD_SIGN     =    1         # pad 在词典的编号
 WEOS_SIGN     =    2         # 结束符标号
 SUNK_SIGN     =    0         # 未知词槽标签编号
 SPAD_SIGN     =    1         # pad 在词槽的编号
 IUNK_SIGN     =    0         # 未知意图标签编号
-
+DUNK_SIGN     =    0         # 为止领域标签编号
 
 """ train.py """
 TRAINITER     =   20         # 迭代训练次数#

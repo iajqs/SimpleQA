@@ -14,16 +14,16 @@
 """
 import sys
 if sys.platform == "win32":
-    from SimpleQA.Base_Seq2SeqAttention.model import *
-    from SimpleQA.Base_Seq2SeqAttention.const import *
-    from SimpleQA.Base_Seq2SeqAttention.dataUtil import *
-    from SimpleQA.Base_Seq2SeqAttention.ouptutUtil import *
+    from SimpleQA.domain.model import *
+    from SimpleQA.domain.const import *
+    from SimpleQA.domain.dataUtil import *
+    from SimpleQA.domain.ouptutUtil import *
 else:
     from .model import *
     from .const import *
     from .dataUtil import *
     from .ouptutUtil import *
-import pytest
+
 
 """ dataUtil.py """
 class TestDataUtil:

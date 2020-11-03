@@ -1,9 +1,10 @@
 import sys
 if sys.platform == "win32":
     from .const import *
+    from .dict import *
 else:
     from .const import *
-
+    from .dict import *
 import re
 import random
 import torch
@@ -36,8 +37,9 @@ def getData(dataDir):
     '''label'''
     with open(pathLabel, 'r', encoding='utf-8') as fr:
         dataLabel = [line.strip() for line in fr.readlines()]
-
-    return dataSeqIn, dataSeqOut, dataLabel
+    '''domain'''
+    dataDomain = [dictATIS.get(label, label) for label in dataLabel]
+    return dataSeqIn, dataSeqOut, dataLabel, dataDomain
 
 """ 获取词典 """
 def getBERTWordDictionary(tokenizer):
@@ -66,9 +68,15 @@ def getDataWordDictionary(dataSeqin):
     :return:
     """
     setWord = set()
+    word2count = dict()
     for line in dataSeqin:
         for word in line:
             setWord.add(word)
+            if word in word2count:
+                word2count[word] = word2count[word] + 1
+            elif word not in word2count:
+                word2count[word] = 1
+    setWord = {word for word in word2count if word2count[word] >= MIN_WORD_COUNT}
     word2index = {word: index + COUNTWSIGN for index, word in enumerate(setWord)}
     word2index["[UNK]"] = WDUNK_SIGN          # <UNK_WORD>
     word2index["[PAD]"] = WPAD_SIGN          # <PAD_WORD>
@@ -108,7 +116,18 @@ def getIntentDictionary(dataLabel):
     dictIntent   = (intent2index, index2intent)
     return dictIntent
 
-
+def getDomainDictionary(dataDomain):
+    """
+    根据领域标签数据获取领域字典
+    :param dataLabel:
+    :return:
+    """
+    setDomain    = {domain for domain in dataDomain}
+    domain2index = {domain: index + COUNTDSIGN for index, domain in enumerate(setDomain)}
+    domain2index["<UNK_DOMAIN>"] = DUNK_SIGN
+    index2domain = {domain2index[intent]: intent for intent in domain2index.keys()}
+    dictDomain   = (domain2index, index2domain)
+    return dictDomain
 
 """ 数据预处理 """
 def normalizeString(s):
@@ -121,7 +140,7 @@ def normalizeString(s):
     s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r"", s)
     return s
 
-def makePairs(dataSeqIn, dataSeqOut, dataLabel):
+def makePairs(dataSeqIn, dataSeqOut, dataLabel, dataDomain):
     """
     根据读取的数据生成样例对
     :param dataSeqIn: 输入序列
@@ -136,14 +155,14 @@ def makePairs(dataSeqIn, dataSeqOut, dataLabel):
         itemSeqIn  = dataSeqIn[index]
         itemSeqOut = dataSeqOut[index]
         itemLabel  = dataLabel[index]
-
+        itemDomain = dataDomain[index]
         assert len(itemSeqIn) == len(itemSeqOut)
-        pairs.append([itemSeqIn, itemSeqOut, itemLabel])
+        pairs.append([itemSeqIn, itemSeqOut, itemLabel, itemDomain])
 
     return pairs
 
 
-def transIds(pairs, BERTWord2index, DataWord2index, slot2index, intent2index):
+def transIds(pairs, BERTWord2index, DataWord2index, slot2index, intent2index, domain2index):
     """
     将字词数据都转换为整数id
     :param pairs:
@@ -157,14 +176,15 @@ def transIds(pairs, BERTWord2index, DataWord2index, slot2index, intent2index):
         itemSeqIn  = pair[0]
         itemSeqOut = pair[1]
         itemIntent = pair[2]
+        itemDomain = pair[3]
 
         itemBERTSeqInIded = [BERTWord2index.get(word, WBUNK_SIGN) for word in itemSeqIn]    # words to ids
         itemDataSeqInIded = [DataWord2index.get(word, WDUNK_SIGN) for word in itemSeqIn]  # words to ids
-        itemSeqOutIded = [slot2index.get(slot, SUNK_SIGN) for slot in itemSeqOut]   # slots to ids
-        itemIntentIded  = intent2index.get(itemIntent, IUNK_SIGN)                      # labels to ids
-
+        itemSeqOutIded    = [slot2index.get(slot, SUNK_SIGN) for slot in itemSeqOut]   # slots to ids
+        itemIntentIded    = intent2index.get(itemIntent, IUNK_SIGN)                      # labels to ids
+        itemDomainIded    = domain2index.get(itemDomain, DUNK_SIGN)
         assert len(itemBERTSeqInIded) == len(itemSeqOutIded)
-        pairsIded.append([itemBERTSeqInIded, itemDataSeqInIded, itemSeqOutIded, itemIntentIded])
+        pairsIded.append([itemBERTSeqInIded, itemDataSeqInIded, itemSeqOutIded, itemIntentIded, itemDomainIded])
 
     return pairsIded
 
@@ -181,11 +201,12 @@ def pad(pairsIded):
         itemSeqIn  = pair[0]
         itemSeqOut = pair[1]
         itemIntent = pair[2]
+        itemDomain = pair[3]
 
         itemSeqIn  = (itemSeqIn + [WEOS_SIGN] + [WPAD_SIGN] * MAXLEN)[:MAXLEN] if len(itemSeqIn) < MAXLEN else itemSeqIn[:MAXLEN - 1] + [WEOS_SIGN]
         itemSeqOut = (itemSeqOut + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN)[:MAXLEN] if len(itemSeqIn) < MAXLEN else itemSeqOut[:MAXLEN - 1] + [SPAD_SIGN]
 
-        pairsIdedPaded.append([itemSeqIn, itemSeqOut, itemIntent])
+        pairsIdedPaded.append([itemSeqIn, itemSeqOut, itemIntent, itemDomain])
 
     return pairsIdedPaded
 
@@ -202,7 +223,8 @@ def splitData(pairs, batchSize=BATCHSIZE):
         trainIterator.append([[item[0] for item in pairs[start:start + batchSize]],
                               [item[1] for item in pairs[start:start + batchSize]],
                               [item[2] for item in pairs[start:start + batchSize]],
-                              [item[3] for item in pairs[start:start + batchSize]]])
+                              [item[3] for item in pairs[start:start + batchSize]],
+                              [item[4] for item in pairs[start:start + batchSize]]])
     return trainIterator
 
 def getMaxLengthFromBatch(batch, addLength):
@@ -236,14 +258,14 @@ def padBatch(batch, addLength, BERTWord2index, DataWord2index, MAXLEN_TEMP=MAXLE
     batchDataSeqIn = [(batch[1][index] + [DataWord2index["[EOS]"]] + [WPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[1]))]
     batchSeqOut    = [(batch[2][index] + [SPAD_SIGN] + [SPAD_SIGN] * MAXLEN_TEMP)[:MAXLEN_TEMP] for index in range(len(batch[2]))]
     for index in range(len(batchBERTSeqIn)): batchBERTSeqIn[index][MAXLEN_TEMP - 1] = BERTWord2index["[SEP]"]
-    trainIterator = [batchBERTSeqIn, batchDataSeqIn, batchSeqOut, batch[3]]
+    trainIterator = [batchBERTSeqIn, batchDataSeqIn, batchSeqOut, batch[3], batch[4]]
 
     return trainIterator
 
-def vector2Tensor(BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel):
+def vector2Tensor(BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel, BatchDomain):
     BatchBERTSeqIn  = torch.tensor(BatchBERTSeqIn, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchBERTSeqIn, dtype=torch.long, device="cpu")
     BatchDataSeqIn = torch.tensor(BatchDataSeqIn, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchDataSeqIn, dtype=torch.long, device="cpu")
     BatchSeqOut = torch.tensor(BatchSeqOut, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchSeqOut, dtype=torch.long, device="cpu")
     BatchLabel  = torch.tensor(BatchLabel, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchLabel, dtype=torch.long, device="cpu")
-
-    return BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel
+    BatchDomain = torch.tensor(BatchDomain, dtype=torch.long).cuda() if torch.cuda.is_available() else torch.tensor(BatchDomain, dtype=torch.long, device="cpu")
+    return BatchBERTSeqIn, BatchDataSeqIn, BatchSeqOut, BatchLabel, BatchDomain

@@ -36,6 +36,22 @@ def getData(dataDir):
 
     return dataSeqIn, dataSeqOut, dataLabel
 
+""" 数据预处理 """
+def normalizeString(s):
+    """
+    去掉非目标语言字符（保留特定标点符号）
+    :param s:
+    :return:
+    """
+    s = re.sub(r"([.!?])", r"", s)
+    s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r" ", s)
+    return s
+
+# def normalizeIntent(intent, isTrain=True):
+#     if isTrain and "#" in intent:
+#         return intent[:intent.find("#")]
+#     return intent
+
 """ 获取词典 """
 def getWordDictionary(dataSeqin):
     """
@@ -93,17 +109,6 @@ def getIntentDictionary(dataLabel):
     return dictIntent
 
 
-
-""" 数据预处理 """
-def normalizeString(s):
-    """
-    去掉非目标语言字符（保留特定标点符号）
-    :param s:
-    :return:
-    """
-    s = re.sub(r"([.!?])", r"", s)
-    s = re.sub(r"[^0-9a-zA-Z.!?\-_\' ]+", r" ", s)
-    return s
 
 def makePairs(dataSeqIn, dataSeqOut, dataLabel):
     """
